@@ -7,6 +7,7 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/custom_button.dart';
 import '../../pricing/data/pricing_service.dart';
 import '../../pricing/models/fare_quote_model.dart';
+import '../data/booking_repository.dart';
 
 class BookingFlowScreen extends StatefulWidget {
   final String? vehicleId;
@@ -102,14 +103,34 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     }
 
     setState(() => _isLoading = true);
-    Future.delayed(const Duration(milliseconds: 700), () {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        final bookingRef =
-            'RG-2026-${(1000 + DateTime.now().millisecond * 7).toString().padLeft(4, '0')}';
-        _showSuccessDialog(bookingRef);
-      }
-    });
+    BookingRepository()
+        .createBooking(
+          customerId: 'mock-user-customer',
+          scheduleId: 'sch-101',
+          pickupLocation: _pickupLocation,
+          dropoffLocation: _dropoffLocation,
+          passengerCount: _passengers,
+          quotedFare: _totalFare,
+          vehicleName: widget.initialRoute ?? 'Toyota HiAce GL Grandia',
+          operatorName: widget.operatorName ?? 'Van-Vans Samar',
+        )
+        .then((b) {
+          if (mounted) {
+            setState(() => _isLoading = false);
+            _showSuccessDialog(b.reference);
+          }
+        })
+        .catchError((err) {
+          if (mounted) {
+            setState(() => _isLoading = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Reservation error: $err'),
+                backgroundColor: AppColors.statusCancelled,
+              ),
+            );
+          }
+        });
   }
 
   void _showSuccessDialog(String reference) {

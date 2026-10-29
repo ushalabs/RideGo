@@ -3,7 +3,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/utils/date_formatter.dart';
 import '../../../core/widgets/app_header.dart';
+import '../data/booking_repository.dart';
+import '../models/booking_model.dart';
 
 class MyBookingsScreen extends StatefulWidget {
   const MyBookingsScreen({super.key});
@@ -13,66 +16,35 @@ class MyBookingsScreen extends StatefulWidget {
 }
 
 class _MyBookingsScreenState extends State<MyBookingsScreen> {
+  final _bookingRepo = BookingRepository();
   String _selectedTab = 'Upcoming';
+  List<BookingModel> _bookings = [];
+  bool _isLoading = true;
 
-  final List<Map<String, dynamic>> _allBookings = [
-    {
-      'id': 'b-101',
-      'reference': 'RG-2026-8472',
-      'operatorName': 'Van-Vans Samar',
-      'vehicleName': 'Toyota HiAce GL Grandia',
-      'category': 'Van',
-      'origin': 'Catbalogan City',
-      'destination': 'Tacloban City',
-      'departureDate': 'Oct 30, 2026 • 08:30 AM',
-      'passengers': 2,
-      'fare': 310.0,
-      'status': 'Upcoming',
-      'paymentStatus': 'Cash at Terminal',
-    },
-    {
-      'id': 'b-102',
-      'reference': 'RG-2026-8190',
-      'operatorName': 'GrandTours Leyte',
-      'vehicleName': 'Nissan NV350 Premium',
-      'category': 'Van',
-      'origin': 'Tacloban City',
-      'destination': 'Calbayog City',
-      'departureDate': 'Oct 31, 2026 • 01:00 PM',
-      'passengers': 1,
-      'fare': 190.0,
-      'status': 'Upcoming',
-      'paymentStatus': 'Cash at Terminal',
-    },
-    {
-      'id': 'b-103',
-      'reference': 'RG-2026-7241',
-      'operatorName': 'City Tours Express',
-      'vehicleName': 'Hino Grand Express Bus',
-      'category': 'Bus',
-      'origin': 'Catbalogan City',
-      'destination': 'Tacloban City',
-      'departureDate': 'Oct 24, 2026 • 06:00 AM',
-      'passengers': 1,
-      'fare': 200.0,
-      'status': 'Completed',
-      'paymentStatus': 'Paid (Cash)',
-    },
-    {
-      'id': 'b-104',
-      'reference': 'RG-2026-6812',
-      'operatorName': 'Duptours Samar',
-      'vehicleName': 'Toyota Commuter Van',
-      'category': 'Van',
-      'origin': 'Catbalogan City',
-      'destination': 'Catarman',
-      'departureDate': 'Oct 18, 2026 • 10:30 AM',
-      'passengers': 1,
-      'fare': 250.0,
-      'status': 'Cancelled',
-      'paymentStatus': 'Cancelled',
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadBookings();
+    _bookingRepo.subscribeToRealtimeBookings(() {
+      if (mounted) _loadBookings();
+    });
+  }
+
+  @override
+  void dispose() {
+    _bookingRepo.unsubscribeRealtime();
+    super.dispose();
+  }
+
+  Future<void> _loadBookings() async {
+    final list = await _bookingRepo.getBookings();
+    if (mounted) {
+      setState(() {
+        _bookings = list;
+        _isLoading = false;
+      });
+    }
+  }
 
   void _cancelBooking(String id) {
     showDialog(
@@ -80,7 +52,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Cancel Booking?'),
         content: const Text(
-          'Are you sure you want to cancel this booking? This will release your seat reservation.',
+          'Are you sure you want to cancel this booking? This will immediately release your seat reservation.',
         ),
         actions: [
           TextButton(
@@ -91,21 +63,20 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.statusCancelled,
             ),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              setState(() {
-                final idx = _allBookings.indexWhere((b) => b['id'] == id);
-                if (idx != -1) {
-                  _allBookings[idx]['status'] = 'Cancelled';
-                  _allBookings[idx]['paymentStatus'] = 'Cancelled';
-                }
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Booking cancelled successfully.'),
-                  backgroundColor: AppColors.statusCancelled,
-                ),
-              );
+              await _bookingRepo.cancelBooking(id);
+              await _loadBookings();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Booking cancelled successfully. Seats released.',
+                    ),
+                    backgroundColor: AppColors.statusCancelled,
+                  ),
+                );
+              }
             },
             child: const Text(
               'Yes, Cancel',
@@ -119,15 +90,21 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _allBookings
-        .where((b) => b['status'] == _selectedTab)
-        .toList();
+    final filtered = _bookings.where((b) {
+      if (_selectedTab == 'Upcoming') {
+        return b.status == BookingStatus.pending ||
+            b.status == BookingStatus.confirmed;
+      } else if (_selectedTab == 'Completed') {
+        return b.status == BookingStatus.completed;
+      } else {
+        return b.status == BookingStatus.cancelled;
+      }
+    }).toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Column(
         children: [
-          // Navy Header matching Figma
           AppHeader(
             title: 'My Bookings',
             subtitle: 'Manage your trips',
@@ -178,9 +155,16 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
             ),
           ),
 
-          // Bookings List
           Expanded(
-            child: filtered.isEmpty
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.headerNavy,
+                      ),
+                    ),
+                  )
+                : filtered.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -227,12 +211,14 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     );
   }
 
-  Widget _buildBookingCard(Map<String, dynamic> b) {
-    final statusColor = b['status'] == 'Upcoming'
+  Widget _buildBookingCard(BookingModel b) {
+    final statusColor =
+        (b.status == BookingStatus.confirmed ||
+            b.status == BookingStatus.pending)
         ? AppColors.statusConfirmed
-        : b['status'] == 'Completed'
-        ? AppColors.statusCompleted
-        : AppColors.statusCancelled;
+        : (b.status == BookingStatus.completed
+              ? AppColors.statusCompleted
+              : AppColors.statusCancelled);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -252,12 +238,11 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: Ref & Status badge
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  b['reference'],
+                  b.reference,
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 14,
@@ -275,7 +260,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                     border: Border.all(color: statusColor),
                   ),
                   child: Text(
-                    b['status'],
+                    b.status.displayName,
                     style: TextStyle(
                       color: statusColor,
                       fontWeight: FontWeight.w700,
@@ -286,22 +271,18 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
               ],
             ),
             const Divider(height: 18),
-
-            // Operator and Vehicle
             Text(
-              b['operatorName'],
+              b.operatorName,
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             Text(
-              b['vehicleName'],
+              b.vehicleName,
               style: const TextStyle(
                 fontSize: 12,
                 color: AppColors.textSecondary,
               ),
             ),
             const SizedBox(height: 10),
-
-            // Route & Departure
             Row(
               children: [
                 const Icon(
@@ -311,7 +292,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  b['origin'],
+                  b.pickupLocation,
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -331,7 +312,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  b['destination'],
+                  b.dropoffLocation,
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -349,7 +330,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  b['departureDate'],
+                  DateFormatter.formatDateTime(b.departureTime),
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textSecondary,
@@ -358,8 +339,6 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
               ],
             ),
             const SizedBox(height: 12),
-
-            // Fare and actions
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -367,7 +346,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      CurrencyFormatter.format(b['fare']),
+                      CurrencyFormatter.format(b.totalFare),
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
@@ -375,7 +354,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                       ),
                     ),
                     Text(
-                      '${b['passengers']} Passenger(s) • ${b['paymentStatus']}',
+                      '${b.passengerCount} Passenger(s) • ${b.paymentStatus}',
                       style: const TextStyle(
                         fontSize: 10,
                         color: AppColors.textSecondary,
@@ -383,9 +362,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                     ),
                   ],
                 ),
-                if (b['status'] == 'Upcoming')
+                if (b.canCancel)
                   OutlinedButton(
-                    onPressed: () => _cancelBooking(b['id']),
+                    onPressed: () => _cancelBooking(b.id),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.statusCancelled,
                       side: const BorderSide(color: AppColors.statusCancelled),
