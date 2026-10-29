@@ -13,42 +13,26 @@
 
 **A high-concurrency, multi-tenant transportation management platform operating along the Pan-Philippine Highway (AH26) between Catbalogan City, Tacloban City, Calbayog City, and 15 intermediate municipalities in Eastern Visayas, Philippines.**
 
-[Explore Features](#-role-based-features) • [Figma UI Showcase](#-ui--prototype-showcase) • [System Architecture](#-system-architecture) • [Getting Started](#-quick-start-guide) • [Transit Corridors](#-regional-transit-network) • [Documentation Index](#-documentation-index)
+[Key Capabilities](#-key-capabilities) • [System Architecture](#-system-architecture) • [Regional Transit Network](#-regional-transit-network) • [Role-Based Features](#-role-based-features) • [Pricing Engine](#-authoritative-pricing-engine) • [Concurrency Engine](#-concurrency--real-time-engine) • [Quick Start](#-quick-start-guide) • [Documentation](#-documentation-index)
 
 </div>
 
 ---
 
-## 📱 UI & Prototype Showcase
+## ⚡ Key Capabilities
 
-RideGo was designed and implemented strictly against the authoritative Figma design system, utilizing genuine design tokens for color hierarchy, rounded card geometry, vehicle category navigation, and real-time status badges.
-
-<div align="center">
-
-### Figma Design & Application Flow Hierarchy
-| Mobile Screen Flow & Customer Journey | Master Prototype Screen Map |
-|:---:|:---:|
-| <img src="docs/screenshots/figma_flows.png" alt="Figma User Flow" width="460"/> | <img src="docs/screenshots/figma_board.jpg" alt="Figma Prototype Boards" width="460"/> |
-| *Flow 1 & Flow 2: Splash $\rightarrow$ Authentication $\rightarrow$ Discovery $\rightarrow$ Category Filter $\rightarrow$ Booking Manifest* | *Complete 12-Screen Multi-Role Layout Map* |
-
-</div>
-
-### Screen Parity Overview
-<div align="center">
-<img src="docs/screenshots/figma_screens.png" alt="RideGo Figma Screens" width="850"/>
-</div>
-
-- **Splash Screen**: Native vector shield and bubble logo with automatic session token verification.
-- **Login & Auth**: Multi-role sign-in with toggleable password visibility and customer/operator onboarding.
-- **Customer Home**: Personalized greetings (`"Hello, Kiya"`), search bar, and horizontal vehicle category filters (**Vans**, **Buses**, **Motorcycles**).
-- **Vehicle Catalog**: Rounded listing cards with fare badges, star ratings, and passenger capacity indicators.
-- **My Bookings**: Segmented tabs (`Upcoming`, `Completed`, `Cancelled`) with scannable digital boarding passes and QR codes.
+- **Corridor Route Discovery**: High-performance municipality-to-municipality routing across Samar and Leyte with strict forward sequence validation.
+- **Authoritative Database Pricing**: Server-enforced piecewise fare calculation (base tariff + segmented distance steps + terminal fees) running in PostgreSQL stored procedures.
+- **Pessimistic Concurrency Locking**: Atomic seat reservation engine utilizing PostgreSQL `SELECT ... FOR UPDATE` row locks to mathematically prevent seat overselling.
+- **Idempotency Protection**: Client-side UUIDv4 idempotency keys ensure network retries never double-charge passengers or duplicate bookings.
+- **Multi-Role Portals**: Distinct application interfaces for **Passengers** (mobile discovery & QR boarding passes), **Vehicle Operators** (fleet inventory, schedules & manifest), and **Platform Administrators** (web operations center & fare configuration).
+- **Cash on Board with Digital Boarding Pass**: Tailored to local transit realities with scannable digital boarding passes and instant operator payment confirmation.
 
 ---
 
 ## 🏛 System Architecture
 
-RideGo follows a **Feature-First Flutter Architecture** with strict layer separation, combining **Flutter Riverpod** for predictable state propagation and **Supabase PostgreSQL** as the single source of business truth.
+RideGo follows a **Feature-First Flutter Architecture** with clean layer boundaries, pairing **Flutter Riverpod** for reactive state propagation with **Supabase PostgreSQL** as the authoritative source of business truth.
 
 ```mermaid
 flowchart TB
@@ -86,9 +70,33 @@ flowchart TB
 
 ---
 
+## 🗺 Regional Transit Network
+
+RideGo models the complete road transit infrastructure connecting Western Samar, Northern Leyte, and Northwestern Samar across the Pan-Philippine Highway (AH26) and the San Juanico Bridge.
+
+```
+                         [ Calbayog City ] (Northern Terminal)
+                                ▲
+                                │ Northbound Corridor (8 Segments)
+                                ▼
+                       [ Catbalogan City ] (Central Hub & Grand Terminal)
+                                ▲
+                                │ Southbound Corridor (10 Segments)
+                                ▼
+                        [ Tacloban City ] (Southern Terminal / Leyte)
+```
+
+### Municipality Stops & Sequence Order
+- **Southbound Corridor (`catbalogan-tacloban-south`)**:
+  Catbalogan City (Terminal) $\rightarrow$ Jiabong $\rightarrow$ Motiong $\rightarrow$ Paranas (Wright) $\rightarrow$ Villareal $\rightarrow$ Pinabacdao $\rightarrow$ Calbiga $\rightarrow$ Basey $\rightarrow$ Marabut $\rightarrow$ Santa Rita $\rightarrow$ Tacloban City (Abucay Terminal).
+- **Northbound Corridor (`catbalogan-calbayog-north`)**:
+  Catbalogan City (Terminal) $\rightarrow$ Jiabong $\rightarrow$ Motiong $\rightarrow$ San Jorge $\rightarrow$ Gandara $\rightarrow$ Pagsanghan $\rightarrow$ Tarangnan $\rightarrow$ Santa Margarita $\rightarrow$ Calbayog City (Central Terminal).
+
+---
+
 ## 👥 Role-Based Features
 
-RideGo enforces strict role authorization at both the Flutter routing layer (`go_router`) and the database level (PostgreSQL RLS policies):
+RideGo enforces strict role authorization at both the Flutter client routing layer (`go_router`) and the database level (PostgreSQL RLS policies):
 
 ```mermaid
 flowchart LR
@@ -98,7 +106,7 @@ flowchart LR
     RoleCheck -->|Role: Admin| AdminPortal[Admin Web Portal\n- Operator Verification\n- Live Fare Rule Engine\n- Financial Revenue Ledger\n- Global System Audit Logs]
 ```
 
-| Feature Area | Customer (Passenger) | Vehicle Operator | Platform Administrator |
+| Capability | Customer (Passenger) | Vehicle Operator | Platform Administrator |
 |---|:---:|:---:|:---:|
 | **Authentication & Profile** | Self-signup, profile edit | Business permit upload | Superuser bootstrap via RPC |
 | **Search & Discovery** | Corridor route filtering | View assigned routes | Manage stops & corridors |
@@ -107,30 +115,6 @@ flowchart LR
 | **Booking & Checkout** | Cash on Board reservation | View passenger manifest | Global booking oversight |
 | **Payment Confirmation** | Pending boarding pass | Confirm cash on boarding | Reconcile gross vs cash |
 | **Live Notifications** | Booking confirmation alerts | New passenger alerts | System audit alerts |
-
----
-
-## 🗺 Regional Transit Network
-
-RideGo models the complete road transit infrastructure connecting Samar and Leyte across the Pan-Philippine Highway (AH26) and the San Juanico Bridge.
-
-```
-                         [ Calbayog City ] (Northern Hub)
-                                ▲
-                                │ Northbound Corridor (8 Segments)
-                                ▼
-                       [ Catbalogan City ] (Central Terminal Hub)
-                                ▲
-                                │ Southbound Corridor (10 Segments)
-                                ▼
-                        [ Tacloban City ] (Southern Hub / Leyte)
-```
-
-### Complete Stop Sequence & Intermediates
-- **Southbound Corridor (`catbalogan-tacloban-south`)**:
-  Catbalogan City (Terminal) $\rightarrow$ Jiabong $\rightarrow$ Motiong $\rightarrow$ Paranas (Wright) $\rightarrow$ Villareal $\rightarrow$ Pinabacdao $\rightarrow$ Calbiga $\rightarrow$ Basey $\rightarrow$ Marabut $\rightarrow$ Santa Rita $\rightarrow$ Tacloban City (Abucay Terminal).
-- **Northbound Corridor (`catbalogan-calbayog-north`)**:
-  Catbalogan City (Terminal) $\rightarrow$ Jiabong $\rightarrow$ Motiong $\rightarrow$ San Jorge $\rightarrow$ Gandara $\rightarrow$ Pagsanghan $\rightarrow$ Tarangnan $\rightarrow$ Santa Margarita $\rightarrow$ Calbayog City (Central Terminal).
 
 ---
 
@@ -277,7 +261,6 @@ flutter run -d chrome --dart-define-from-file=config.dev.json
 
 | Document | Purpose |
 |---|---|
-| [Figma Parity Guide](docs/FIGMA_PARITY.md) | Design token specifications, color palettes, and UI screen audits. |
 | [System Architecture](docs/ARCHITECTURE.md) | Detailed layer architecture, state flow, and repository contracts. |
 | [Database Schema](docs/DATABASE.md) | Schema definitions, table relationships, RLS policies, and RPC signatures. |
 | [Route Catalog](docs/ROUTES.md) | Complete Samar and Leyte stop coordinates, corridor matrices, and fare rules. |
