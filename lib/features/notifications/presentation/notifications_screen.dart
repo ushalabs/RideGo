@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/date_formatter.dart';
 import '../../../core/widgets/app_header.dart';
+import '../data/notification_repository.dart';
+import '../models/notification_model.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -11,50 +14,41 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  final List<Map<String, dynamic>> _notifications = [
-    {
-      'id': 'n-1',
-      'title': 'Booking Confirmed',
-      'message': 'Your booking for Van-Vans (Toyota HiAce) on Oct 30, 2026 at 08:30 AM has been confirmed.',
-      'time': '10 mins ago',
-      'isRead': false,
-      'type': 'confirmed',
-    },
-    {
-      'id': 'n-2',
-      'title': 'Departure Reminder',
-      'message': 'Your scheduled trip from Catbalogan to Tacloban departs tomorrow morning.',
-      'time': '2 hours ago',
-      'isRead': false,
-      'type': 'reminder',
-    },
-    {
-      'id': 'n-3',
-      'title': 'Payment Status: Cash at Terminal',
-      'message': 'Please present your Booking Reference RG-2026-8472 at the terminal counter before boarding.',
-      'time': '1 day ago',
-      'isRead': true,
-      'type': 'info',
-    },
-    {
-      'id': 'n-4',
-      'title': 'Trip Completed',
-      'message': 'Thank you for riding with City Tours Express. Rate your travel experience!',
-      'time': '5 days ago',
-      'isRead': true,
-      'type': 'completed',
-    },
-  ];
+  final _notifRepo = NotificationRepository();
+  List<NotificationModel> _notifications = [];
+  bool _isLoading = true;
 
-  void _markAllAsRead() {
-    setState(() {
-      for (var n in _notifications) {
-        n['isRead'] = true;
-      }
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('All notifications marked as read')),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifications();
+  }
+
+  Future<void> _loadNotifications() async {
+    final list = await _notifRepo.getNotifications('mock-user-customer');
+    if (mounted) {
+      setState(() {
+        _notifications = list;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _markAllAsRead() async {
+    await _notifRepo.markAllAsRead('mock-user-customer');
+    await _loadNotifications();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('All notifications marked as read')),
+      );
+    }
+  }
+
+  Future<void> _toggleRead(NotificationModel n) async {
+    if (!n.isRead) {
+      await _notifRepo.markAsRead(n.id);
+      await _loadNotifications();
+    }
   }
 
   @override
@@ -63,7 +57,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       backgroundColor: AppColors.background,
       body: Column(
         children: [
-          // Navy Header matching Figma
           AppHeader(
             title: 'Notifications',
             subtitle: 'Stay updated with your bookings',
@@ -81,10 +74,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
             ],
           ),
-
-          // Notifications List
           Expanded(
-            child: _notifications.isEmpty
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.headerNavy,
+                      ),
+                    ),
+                  )
+                : _notifications.isEmpty
                 ? const Center(
                     child: Text(
                       'No notifications yet',
@@ -99,7 +98,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     itemCount: _notifications.length,
                     itemBuilder: (context, index) {
                       final n = _notifications[index];
-                      return _buildNotificationCard(n);
+                      return GestureDetector(
+                        onTap: () => _toggleRead(n),
+                        child: _buildNotificationCard(n),
+                      );
                     },
                   ),
           ),
@@ -108,22 +110,29 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  Widget _buildNotificationCard(Map<String, dynamic> n) {
+  Widget _buildNotificationCard(NotificationModel n) {
     IconData icon;
     Color iconColor;
 
-    switch (n['type']) {
+    switch (n.type) {
       case 'confirmed':
+      case 'booking_confirmed':
         icon = Icons.check_circle;
         iconColor = AppColors.statusConfirmed;
         break;
       case 'reminder':
+      case 'schedule_change':
         icon = Icons.alarm;
         iconColor = AppColors.statusPending;
         break;
       case 'completed':
+      case 'booking_completed':
         icon = Icons.task_alt;
         iconColor = AppColors.statusCompleted;
+        break;
+      case 'operator_approved':
+        icon = Icons.verified;
+        iconColor = AppColors.statusConfirmed;
         break;
       default:
         icon = Icons.info;
@@ -134,13 +143,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: n['isRead'] ? Colors.white.withOpacity(0.9) : Colors.white,
+        color: n.isRead ? Colors.white.withOpacity(0.9) : Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: n['isRead']
+          color: n.isRead
               ? AppColors.inputBorder.withOpacity(0.5)
               : AppColors.buttonTeal,
-          width: n['isRead'] ? 1.0 : 1.5,
+          width: n.isRead ? 1.0 : 1.5,
         ),
         boxShadow: [
           BoxShadow(
@@ -171,9 +180,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        n['title'],
+                        n.title,
                         style: TextStyle(
-                          fontWeight: n['isRead']
+                          fontWeight: n.isRead
                               ? FontWeight.w600
                               : FontWeight.w800,
                           fontSize: 14,
@@ -182,7 +191,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       ),
                     ),
                     Text(
-                      n['time'],
+                      DateFormatter.formatShortDate(n.createdAt),
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.textMuted,
@@ -192,10 +201,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  n['message'],
+                  n.message,
                   style: TextStyle(
                     fontSize: 12,
-                    color: n['isRead']
+                    color: n.isRead
                         ? AppColors.textSecondary
                         : AppColors.textPrimary,
                     height: 1.35,

@@ -3,6 +3,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/utils/date_formatter.dart';
+import '../../bookings/data/booking_repository.dart';
+import '../../bookings/models/booking_model.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -13,6 +16,10 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _selectedNavIndex = 0;
+  final _bookingRepo = BookingRepository();
+
+  List<BookingModel> _bookings = [];
+  bool _isLoading = true;
 
   final List<Map<String, dynamic>> _pendingOperators = [
     {
@@ -64,6 +71,43 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     },
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _loadLiveAdminData();
+    _bookingRepo.subscribeToRealtimeBookings(() {
+      if (mounted) _loadLiveAdminData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _bookingRepo.unsubscribeRealtime();
+    super.dispose();
+  }
+
+  Future<void> _loadLiveAdminData() async {
+    final bList = await _bookingRepo.getBookings();
+    if (mounted) {
+      setState(() {
+        _bookings = bList;
+        _isLoading = false;
+      });
+    }
+  }
+
+  double get _totalBookedValue {
+    return _bookings
+        .where((b) => b.status != BookingStatus.cancelled)
+        .fold(0.0, (sum, b) => sum + b.totalFare);
+  }
+
+  double get _actualCollectedCash {
+    return _bookings
+        .where((b) => b.paymentStatus == 'Paid (Cash)')
+        .fold(0.0, (sum, b) => sum + b.totalFare);
+  }
+
   void _approveOperator(int index) {
     setState(() {
       _pendingOperators[index]['status'] = 'Approved';
@@ -83,9 +127,77 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       _pendingOperators[index]['status'] = 'Rejected';
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+      const SnackBar(
         content: Text('Operator application rejected.'),
         backgroundColor: AppColors.statusCancelled,
+      ),
+    );
+  }
+
+  void _showAddFareRuleModal() {
+    final corridorCtrl = TextEditingController();
+    final baseCtrl = TextEditingController();
+    String cat = 'Van';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Authoritative Fare Rule'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: corridorCtrl,
+              decoration: const InputDecoration(labelText: 'Corridor Name'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: baseCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Base Fare (PHP ₱)'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: cat,
+              decoration: const InputDecoration(labelText: 'Vehicle Category'),
+              items: [
+                'Van',
+                'Bus',
+                'Motor',
+                'Car',
+              ].map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+              onChanged: (v) => cat = v!,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.buttonTeal,
+            ),
+            onPressed: () {
+              if (corridorCtrl.text.isNotEmpty && baseCtrl.text.isNotEmpty) {
+                setState(() {
+                  _fareRules.add({
+                    'corridor': corridorCtrl.text.trim(),
+                    'category': cat,
+                    'base': double.tryParse(baseCtrl.text) ?? 150.0,
+                    'status': 'Active',
+                  });
+                });
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text(
+              'Save Rule',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -165,36 +277,43 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
           // Main Content
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (!isDesktop) ...[
-                    // Mobile navigation chips
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          _buildMobileNavChip(0, 'Overview'),
-                          _buildMobileNavChip(1, 'Approvals'),
-                          _buildMobileNavChip(2, 'Routes'),
-                          _buildMobileNavChip(3, 'Fares'),
-                          _buildMobileNavChip(4, 'Bookings'),
-                        ],
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.headerNavy,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                  ],
+                  )
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (!isDesktop) ...[
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                _buildMobileNavChip(0, 'Overview'),
+                                _buildMobileNavChip(1, 'Approvals'),
+                                _buildMobileNavChip(2, 'Routes'),
+                                _buildMobileNavChip(3, 'Fares'),
+                                _buildMobileNavChip(4, 'Bookings'),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
 
-                  if (_selectedNavIndex == 0) _buildOverviewSection(),
-                  if (_selectedNavIndex == 1) _buildApprovalsSection(),
-                  if (_selectedNavIndex == 2) _buildRoutesSection(),
-                  if (_selectedNavIndex == 3) _buildFareSection(),
-                  if (_selectedNavIndex == 4) _buildBookingsSection(),
-                ],
-              ),
-            ),
+                        if (_selectedNavIndex == 0) _buildOverviewSection(),
+                        if (_selectedNavIndex == 1) _buildApprovalsSection(),
+                        if (_selectedNavIndex == 2) _buildRoutesSection(),
+                        if (_selectedNavIndex == 3) _buildFareSection(),
+                        if (_selectedNavIndex == 4) _buildBookingsSection(),
+                      ],
+                    ),
+                  ),
           ),
         ],
       ),
@@ -241,6 +360,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildOverviewSection() {
+    final pendingOps = _pendingOperators
+        .where((o) => o['status'] == 'Pending Review')
+        .length;
+    final approvedOps = _pendingOperators
+        .where((o) => o['status'] == 'Approved')
+        .length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -274,21 +400,45 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
                 _buildStatBox(
                   'Approved Operators',
-                  '18',
+                  '$approvedOps',
                   Icons.business,
                   AppColors.buttonTeal,
                 ),
                 _buildStatBox(
                   'Pending Applications',
-                  '2',
+                  '$pendingOps',
                   Icons.pending_actions,
                   AppColors.statusPending,
                 ),
                 _buildStatBox(
                   'Total Bookings',
-                  '3,942',
+                  '${_bookings.length}',
                   Icons.confirmation_number,
                   AppColors.statusConfirmed,
+                ),
+                _buildStatBox(
+                  'Booked Value',
+                  CurrencyFormatter.format(_totalBookedValue),
+                  Icons.request_quote,
+                  AppColors.headerNavy,
+                ),
+                _buildStatBox(
+                  'Collected Cash',
+                  CurrencyFormatter.format(_actualCollectedCash),
+                  Icons.payments,
+                  AppColors.statusConfirmed,
+                ),
+                _buildStatBox(
+                  'Active Corridors',
+                  '2',
+                  Icons.alt_route,
+                  AppColors.buttonTeal,
+                ),
+                _buildStatBox(
+                  'Coverage Hubs',
+                  '18',
+                  Icons.place,
+                  AppColors.headerNavy,
                 ),
               ],
             );
@@ -312,14 +462,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              Text(
+            children: [
+              const Text(
                 'Operator Approval Queue',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               Text(
-                '2 Applications',
-                style: TextStyle(
+                '${_pendingOperators.length} Applications',
+                style: const TextStyle(
                   fontSize: 12,
                   color: AppColors.textSecondary,
                   fontWeight: FontWeight.w600,
@@ -468,28 +618,47 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Authoritative Fare Configuration Matrix',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Authoritative Fare Configuration Matrix',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.add, size: 16, color: Colors.white),
+                label: const Text(
+                  'Add Rule',
+                  style: TextStyle(color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.buttonTeal,
+                ),
+                onPressed: _showAddFareRuleModal,
+              ),
+            ],
           ),
           const SizedBox(height: 12),
-          DataTable(
-            columns: const [
-              DataColumn(label: Text('Corridor')),
-              DataColumn(label: Text('Category')),
-              DataColumn(label: Text('Base Fare')),
-              DataColumn(label: Text('Status')),
-            ],
-            rows: _fareRules.map((f) {
-              return DataRow(
-                cells: [
-                  DataCell(Text(f['corridor'])),
-                  DataCell(Text(f['category'])),
-                  DataCell(Text(CurrencyFormatter.format(f['base']))),
-                  DataCell(Text(f['status'])),
-                ],
-              );
-            }).toList(),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              columns: const [
+                DataColumn(label: Text('Corridor')),
+                DataColumn(label: Text('Category')),
+                DataColumn(label: Text('Base Fare')),
+                DataColumn(label: Text('Status')),
+              ],
+              rows: _fareRules.map((f) {
+                return DataRow(
+                  cells: [
+                    DataCell(Text(f['corridor'])),
+                    DataCell(Text(f['category'])),
+                    DataCell(Text(CurrencyFormatter.format(f['base']))),
+                    DataCell(Text(f['status'])),
+                  ],
+                );
+              }).toList(),
+            ),
           ),
         ],
       ),
@@ -505,14 +674,50 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Text(
-            'Global Booking Audits',
+        children: [
+          const Text(
+            'Global Booking Oversight',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
           ),
-          SizedBox(height: 12),
-          Text(
-            'All passenger reservations, payments, and trip statuses are monitored in real time.',
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              columns: const [
+                DataColumn(label: Text('Ref')),
+                DataColumn(label: Text('Operator')),
+                DataColumn(label: Text('Trip')),
+                DataColumn(label: Text('Departure')),
+                DataColumn(label: Text('Fare')),
+                DataColumn(label: Text('Status')),
+                DataColumn(label: Text('Payment')),
+              ],
+              rows: _bookings.map((b) {
+                return DataRow(
+                  cells: [
+                    DataCell(
+                      Text(
+                        b.reference,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.buttonTeal,
+                        ),
+                      ),
+                    ),
+                    DataCell(Text(b.operatorName)),
+                    DataCell(
+                      Text('${b.pickupLocation} → ${b.dropoffLocation}'),
+                    ),
+                    DataCell(
+                      Text(DateFormatter.formatShortDate(b.departureTime)),
+                    ),
+                    DataCell(Text(CurrencyFormatter.format(b.totalFare))),
+                    DataCell(Text(b.status.displayName)),
+                    DataCell(Text(b.paymentStatus)),
+                  ],
+                );
+              }).toList(),
+            ),
           ),
         ],
       ),

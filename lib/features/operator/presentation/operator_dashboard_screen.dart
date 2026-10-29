@@ -3,7 +3,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/utils/date_formatter.dart';
 import '../../../core/widgets/custom_button.dart';
+import '../../bookings/data/booking_repository.dart';
+import '../../bookings/models/booking_model.dart';
+import '../../schedules/data/schedule_repository.dart';
+import '../../schedules/models/schedule_model.dart';
+import '../../vehicles/data/vehicle_repository.dart';
+import '../../vehicles/models/vehicle_model.dart';
 
 class OperatorDashboardScreen extends StatefulWidget {
   const OperatorDashboardScreen({super.key});
@@ -16,91 +23,59 @@ class OperatorDashboardScreen extends StatefulWidget {
 class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  bool _isApproved = true; // Toggleable for demo
+  final _vehicleRepo = VehicleRepository();
+  final _scheduleRepo = ScheduleRepository();
+  final _bookingRepo = BookingRepository();
 
-  final List<Map<String, dynamic>> _operatorVehicles = [
-    {
-      'id': 'ov-1',
-      'name': 'Toyota HiAce GL Grandia',
-      'plate': 'NDX-4821',
-      'type': 'Van',
-      'capacity': 14,
-      'route': 'Catbalogan - Tacloban',
-      'status': 'Active',
-    },
-    {
-      'id': 'ov-2',
-      'name': 'Nissan NV350 Urvan',
-      'plate': 'EVB-8912',
-      'type': 'Van',
-      'capacity': 15,
-      'route': 'Catbalogan - Calbayog',
-      'status': 'Active',
-    },
-  ];
+  bool _isApproved = true;
+  bool _isLoading = true;
 
-  final List<Map<String, dynamic>> _schedules = [
-    {
-      'id': 'sch-1',
-      'vehicle': 'Toyota HiAce (NDX-4821)',
-      'time': 'Tomorrow • 08:30 AM',
-      'route': 'Catbalogan → Tacloban',
-      'booked': 9,
-      'capacity': 14,
-    },
-    {
-      'id': 'sch-2',
-      'vehicle': 'Nissan NV350 (EVB-8912)',
-      'time': 'Tomorrow • 01:00 PM',
-      'route': 'Catbalogan → Calbayog',
-      'booked': 12,
-      'capacity': 15,
-    },
-  ];
-
-  final List<Map<String, dynamic>> _incomingBookings = [
-    {
-      'id': 'b-201',
-      'customer': 'Juan Dela Cruz',
-      'ref': 'RG-2026-8472',
-      'vehicle': 'Toyota HiAce GL Grandia',
-      'route': 'Catbalogan → Tacloban',
-      'time': 'Oct 30 • 08:30 AM',
-      'passengers': 2,
-      'amount': 310.0,
-      'status': 'Pending',
-      'payment': 'Cash at Terminal',
-    },
-    {
-      'id': 'b-202',
-      'customer': 'Maria Santos',
-      'ref': 'RG-2026-9014',
-      'vehicle': 'Nissan NV350 Urvan',
-      'route': 'Catbalogan → Calbayog',
-      'time': 'Oct 30 • 01:00 PM',
-      'passengers': 1,
-      'amount': 150.0,
-      'status': 'Confirmed',
-      'payment': 'Paid (Cash)',
-    },
-  ];
+  List<VehicleModel> _vehicles = [];
+  List<ScheduleModel> _schedules = [];
+  List<BookingModel> _bookings = [];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _loadAllOperatorData();
+    _bookingRepo.subscribeToRealtimeBookings(() {
+      if (mounted) _loadAllOperatorData();
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _bookingRepo.unsubscribeRealtime();
     super.dispose();
+  }
+
+  Future<void> _loadAllOperatorData() async {
+    final vList = await _vehicleRepo.getVehiclesByOperator('mock-op-1');
+    final sList = await _scheduleRepo.getSchedules();
+    final bList = await _bookingRepo.getBookings();
+
+    if (mounted) {
+      setState(() {
+        _vehicles = vList;
+        _schedules = sList;
+        _bookings = bList;
+        _isLoading = false;
+      });
+    }
+  }
+
+  double get _totalCollectedRevenue {
+    return _bookings
+        .where((b) => b.paymentStatus == 'Paid (Cash)')
+        .fold(0.0, (sum, b) => sum + b.totalFare);
   }
 
   void _showAddVehicleModal() {
     final nameController = TextEditingController();
     final plateController = TextEditingController();
-    String type = 'Van';
+    VehicleType type = VehicleType.van;
 
     showModalBottomSheet(
       context: context,
@@ -109,73 +84,84 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 20,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Register New Vehicle',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Vehicle Model / Name',
+      builder: (ctx) => StatefulBuilder(
+        builder: (sbContext, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Register New Vehicle',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: plateController,
-              decoration: const InputDecoration(
-                labelText: 'Plate / Registration Number',
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Vehicle Model / Name',
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: type,
-              decoration: const InputDecoration(labelText: 'Category'),
-              items: [
-                'Van',
-                'Bus',
-                'Car',
-                'Motorcycle',
-              ].map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-              onChanged: (v) => type = v!,
-            ),
-            const SizedBox(height: 20),
-            CustomButton(
-              text: 'Save Vehicle',
-              onPressed: () {
-                if (nameController.text.isNotEmpty) {
-                  setState(() {
-                    _operatorVehicles.add({
-                      'id': 'ov-${DateTime.now().millisecond}',
-                      'name': nameController.text,
-                      'plate': plateController.text.isEmpty
-                          ? 'TEMP-01'
-                          : plateController.text,
-                      'type': type,
-                      'capacity': type == 'Bus' ? 45 : (type == 'Van' ? 14 : 4),
-                      'route': 'Catbalogan - Tacloban Corridor',
-                      'status': 'Active',
-                    });
-                  });
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Vehicle added to fleet!')),
-                  );
-                }
-              },
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: plateController,
+                decoration: const InputDecoration(
+                  labelText: 'Plate / Registration Number',
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<VehicleType>(
+                value: type,
+                decoration: const InputDecoration(labelText: 'Category'),
+                items: VehicleType.values
+                    .map(
+                      (c) => DropdownMenuItem(
+                        value: c,
+                        child: Text(c.displayName),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) => setModalState(() => type = v!),
+              ),
+              const SizedBox(height: 20),
+              CustomButton(
+                text: 'Save Vehicle',
+                onPressed: () async {
+                  if (nameController.text.isNotEmpty) {
+                    final name = nameController.text.trim();
+                    final plate = plateController.text.isEmpty
+                        ? 'TEMP-${DateTime.now().millisecond}'
+                        : plateController.text.trim();
+                    final cap = type == VehicleType.bus
+                        ? 45
+                        : (type == VehicleType.van ? 14 : 4);
+                    Navigator.pop(ctx);
+
+                    await _vehicleRepo.addVehicle(
+                      operatorId: 'mock-op-1',
+                      name: name,
+                      category: type,
+                      plateNumber: plate,
+                      capacity: cap,
+                    );
+                    await _loadAllOperatorData();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Vehicle added to fleet!'),
+                        ),
+                      );
+                    }
+                  }
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -204,27 +190,49 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
-            const Text('Departure: Tomorrow at 03:30 PM'),
+            const Text('Departure: Today at 04:30 PM (Asia/Manila)'),
             const SizedBox(height: 16),
             CustomButton(
-              text: 'Publish Schedule',
-              onPressed: () {
-                setState(() {
-                  _schedules.add({
-                    'id': 'sch-${DateTime.now().millisecond}',
-                    'vehicle': 'Toyota HiAce (NDX-4821)',
-                    'time': 'Tomorrow • 03:30 PM',
-                    'route': 'Catbalogan → Tacloban',
-                    'booked': 0,
-                    'capacity': 14,
-                  });
-                });
+              text: 'Publish Departure Schedule',
+              onPressed: () async {
+                final vId = _vehicles.isNotEmpty
+                    ? _vehicles.first.id
+                    : 'v-local-1';
+                final vName = _vehicles.isNotEmpty
+                    ? _vehicles.first.name
+                    : 'Toyota HiAce GL Grandia';
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Departure schedule published!'),
-                  ),
-                );
+
+                try {
+                  await _scheduleRepo.createSchedule(
+                    operatorId: 'mock-op-1',
+                    operatorName: 'Van-Vans Samar',
+                    vehicleId: vId,
+                    vehicleName: vName,
+                    routeVariantId: 'rv-sb-main',
+                    routeName: 'Catbalogan to Tacloban Express',
+                    departureTime: DateTime.now().add(const Duration(hours: 4)),
+                    capacity: 14,
+                    fare: 150.0,
+                  );
+                  await _loadAllOperatorData();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Departure schedule published!'),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: AppColors.statusCancelled,
+                      ),
+                    );
+                  }
+                }
               },
             ),
           ],
@@ -270,6 +278,12 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
       ),
       body: !_isApproved
           ? _buildPendingApprovalState()
+          : _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.headerNavy),
+              ),
+            )
           : TabBarView(
               controller: _tabController,
               children: [
@@ -335,7 +349,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
             Expanded(
               child: _buildMetricCard(
                 'Active Fleet',
-                '${_operatorVehicles.length}',
+                '${_vehicles.length}',
                 Icons.directions_car,
               ),
             ),
@@ -354,20 +368,23 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
           children: [
             Expanded(
               child: _buildMetricCard(
-                'Today Bookings',
-                '${_incomingBookings.length}',
+                'Bookings',
+                '${_bookings.length}',
                 Icons.confirmation_number,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildMetricCard('Revenue', '₱ 460', Icons.payments),
+              child: _buildMetricCard(
+                'Collected Cash',
+                CurrencyFormatter.format(_totalCollectedRevenue),
+                Icons.payments,
+              ),
             ),
           ],
         ),
         const SizedBox(height: 20),
 
-        // Upcoming Departures
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -407,21 +424,21 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        s['route'],
+                        s.routeName,
                         style: const TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
                         ),
                       ),
                       Text(
-                        s['time'],
+                        DateFormatter.formatDateTime(s.departureTime),
                         style: const TextStyle(
                           fontSize: 11,
                           color: AppColors.textSecondary,
                         ),
                       ),
                       Text(
-                        s['vehicle'],
+                        s.vehicleName,
                         style: const TextStyle(
                           fontSize: 11,
                           color: AppColors.textMuted,
@@ -441,7 +458,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                     border: Border.all(color: AppColors.buttonTeal),
                   ),
                   child: Text(
-                    '${s['booked']}/${s['capacity']} Seats',
+                    '${s.availableCapacity}/${s.totalCapacity} Seats',
                     style: const TextStyle(
                       color: AppColors.buttonTeal,
                       fontWeight: FontWeight.w700,
@@ -471,9 +488,9 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
       ),
       body: ListView.builder(
         padding: const EdgeInsets.all(18),
-        itemCount: _operatorVehicles.length,
+        itemCount: _vehicles.length,
         itemBuilder: (context, index) {
-          final v = _operatorVehicles[index];
+          final v = _vehicles[index];
           return Container(
             margin: const EdgeInsets.only(bottom: 14),
             padding: const EdgeInsets.all(16),
@@ -493,21 +510,21 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        v['name'],
+                        v.name,
                         style: const TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 14,
                         ),
                       ),
                       Text(
-                        'Plate: ${v['plate']} • ${v['capacity']} Seats',
+                        'Plate: ${v.plateNumber} • ${v.passengerCapacity} Seats',
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.textSecondary,
                         ),
                       ),
                       Text(
-                        'Route: ${v['route']}',
+                        'Category: ${v.category.displayName}',
                         style: const TextStyle(
                           fontSize: 11,
                           color: AppColors.buttonTeal,
@@ -526,7 +543,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    v['status'],
+                    v.status,
                     style: const TextStyle(
                       color: AppColors.statusConfirmed,
                       fontWeight: FontWeight.w700,
@@ -545,10 +562,11 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
   Widget _buildBookingsTab() {
     return ListView.builder(
       padding: const EdgeInsets.all(18),
-      itemCount: _incomingBookings.length,
+      itemCount: _bookings.length,
       itemBuilder: (context, index) {
-        final b = _incomingBookings[index];
-        final isPending = b['status'] == 'Pending';
+        final b = _bookings[index];
+        final isPending = b.status == BookingStatus.pending;
+        final isPaid = b.paymentStatus == 'Paid (Cash)';
 
         return Container(
           margin: const EdgeInsets.only(bottom: 14),
@@ -564,7 +582,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    b['ref'],
+                    b.reference,
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       color: AppColors.buttonTeal,
@@ -576,17 +594,23 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: isPending
-                          ? AppColors.statusPending.withOpacity(0.15)
-                          : AppColors.statusConfirmed.withOpacity(0.15),
+                      color:
+                          (b.status == BookingStatus.confirmed
+                                  ? AppColors.statusConfirmed
+                                  : (b.status == BookingStatus.cancelled
+                                        ? AppColors.statusCancelled
+                                        : AppColors.statusPending))
+                              .withOpacity(0.15),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      b['status'],
+                      b.status.displayName,
                       style: TextStyle(
-                        color: isPending
-                            ? AppColors.statusPending
-                            : AppColors.statusConfirmed,
+                        color: b.status == BookingStatus.confirmed
+                            ? AppColors.statusConfirmed
+                            : (b.status == BookingStatus.cancelled
+                                  ? AppColors.statusCancelled
+                                  : AppColors.statusPending),
                         fontWeight: FontWeight.w700,
                         fontSize: 11,
                       ),
@@ -596,21 +620,21 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
               ),
               const Divider(height: 16),
               Text(
-                'Passenger: ${b['customer']} (${b['passengers']} seat(s))',
+                'Passenger Seats: ${b.passengerCount} seat(s)',
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 13,
                 ),
               ),
               Text(
-                'Trip: ${b['route']} • ${b['time']}',
+                'Trip: ${b.pickupLocation} → ${b.dropoffLocation}',
                 style: const TextStyle(
                   fontSize: 12,
                   color: AppColors.textSecondary,
                 ),
               ),
               Text(
-                'Vehicle: ${b['vehicle']}',
+                'Time: ${DateFormatter.formatDateTime(b.departureTime)}',
                 style: const TextStyle(
                   fontSize: 12,
                   color: AppColors.textMuted,
@@ -621,19 +645,23 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    CurrencyFormatter.format(b['amount']),
+                    CurrencyFormatter.format(b.totalFare),
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 15,
                       color: AppColors.buttonTeal,
                     ),
                   ),
-                  if (isPending)
+                  if (isPending || !isPaid)
                     Row(
                       children: [
                         OutlinedButton(
-                          onPressed: () {
-                            setState(() => b['status'] = 'Cancelled');
+                          onPressed: () async {
+                            await _bookingRepo.cancelBooking(
+                              b.id,
+                              reason: 'Operator rejected reservation',
+                            );
+                            await _loadAllOperatorData();
                           },
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.statusCancelled,
@@ -641,21 +669,22 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                               color: AppColors.statusCancelled,
                             ),
                           ),
-                          child: const Text('Reject'),
+                          child: const Text('Cancel'),
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              b['status'] = 'Confirmed';
-                              b['payment'] = 'Paid (Cash)';
-                            });
+                          onPressed: () async {
+                            await _bookingRepo.confirmPayment(
+                              b.id,
+                              'mock-operator-staff',
+                            );
+                            await _loadAllOperatorData();
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.buttonTeal,
                           ),
                           child: const Text(
-                            'Confirm',
+                            'Confirm Cash',
                             style: TextStyle(color: Colors.white),
                           ),
                         ),
@@ -663,7 +692,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                     )
                   else
                     Text(
-                      b['payment'],
+                      b.paymentStatus,
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
