@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/custom_button.dart';
 import '../../../core/widgets/ridego_logo.dart';
+import '../models/user_role.dart';
+import 'auth_providers.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -26,16 +29,105 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() {
+  Future<void> _handleLogin() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-      Future.delayed(const Duration(milliseconds: 600), () {
+      try {
+        final profile = await ref
+            .read(authNotifierProvider.notifier)
+            .signIn(_emailController.text.trim(), _passwordController.text);
+
         if (mounted) {
           setState(() => _isLoading = false);
-          context.go('/home');
+
+          // Route based on role
+          switch (profile.role) {
+            case UserRole.admin:
+              context.go('/admin/dashboard');
+              break;
+            case UserRole.operator:
+              final op = await ref
+                  .read(authRepositoryProvider)
+                  .getOperatorProfile(profile.id);
+              if (mounted) {
+                if (op != null && !op.isApproved) {
+                  context.go('/operator/pending');
+                } else {
+                  context.go('/operator/dashboard');
+                }
+              }
+              break;
+            case UserRole.customer:
+              context.go('/home');
+              break;
+          }
         }
-      });
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Login failed: ${e.toString().replaceAll("Exception:", "").trim()}',
+              ),
+              backgroundColor: AppColors.statusCancelled,
+            ),
+          );
+        }
+      }
     }
+  }
+
+  void _showForgotPasswordDialog() {
+    final resetController = TextEditingController(text: _emailController.text);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Enter your registered email address to receive password reset instructions.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: resetController,
+              decoration: const InputDecoration(labelText: 'Email Address'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.buttonTeal,
+            ),
+            onPressed: () {
+              ref
+                  .read(authRepositoryProvider)
+                  .sendPasswordReset(resetController.text.trim());
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Password reset instructions sent if email exists.',
+                  ),
+                  backgroundColor: AppColors.headerNavy,
+                ),
+              );
+            },
+            child: const Text(
+              'Send Reset Link',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -103,9 +195,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               : Icons.visibility,
                           color: AppColors.textSecondary,
                         ),
-                        onPressed: () {
-                          setState(() => _obscurePassword = !_obscurePassword);
-                        },
+                        onPressed: () => setState(
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
                       ),
                       fillColor: Colors.white.withOpacity(0.95),
                     ),
@@ -125,16 +217,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Password reset link will be sent to your email.',
-                            ),
-                            backgroundColor: AppColors.headerNavy,
-                          ),
-                        );
-                      },
+                      onPressed: _showForgotPasswordDialog,
                       child: const Text(
                         'Forgot Password?',
                         style: TextStyle(
@@ -185,7 +268,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const Divider(color: Colors.white38),
                   const SizedBox(height: 12),
 
-                  // Role navigation links wrapped for all screen sizes
+                  // Portal and Operator registration shortcuts
                   Wrap(
                     alignment: WrapAlignment.spaceEvenly,
                     spacing: 12,
@@ -193,19 +276,19 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       TextButton.icon(
                         icon: const Icon(
-                          Icons.directions_bus,
+                          Icons.business,
                           size: 16,
                           color: AppColors.headerNavy,
                         ),
                         label: const Text(
-                          'Operator Portal',
+                          'Register Operator',
                           style: TextStyle(
                             color: AppColors.headerNavy,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                             fontSize: 12,
                           ),
                         ),
-                        onPressed: () => context.push('/operator/dashboard'),
+                        onPressed: () => context.push('/operator/register'),
                       ),
                       TextButton.icon(
                         icon: const Icon(
@@ -217,7 +300,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           'Admin Portal',
                           style: TextStyle(
                             color: AppColors.headerNavy,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                             fontSize: 12,
                           ),
                         ),

@@ -12,7 +12,9 @@ import '../../features/customer/presentation/customer_home_screen.dart';
 import '../../features/customer/presentation/customer_shell.dart';
 import '../../features/customer/presentation/vehicle_details_screen.dart';
 import '../../features/notifications/presentation/notifications_screen.dart';
+import '../../features/operator/presentation/approval_status_screen.dart';
 import '../../features/operator/presentation/operator_dashboard_screen.dart';
+import '../../features/operator/presentation/operator_register_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -28,6 +30,14 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/register',
       builder: (context, state) => const RegisterScreen(),
+    ),
+    GoRoute(
+      path: '/operator/register',
+      builder: (context, state) => const OperatorRegisterScreen(),
+    ),
+    GoRoute(
+      path: '/operator/pending',
+      builder: (context, state) => const ApprovalStatusScreen(),
     ),
     ShellRoute(
       navigatorKey: _shellNavigatorKey,
