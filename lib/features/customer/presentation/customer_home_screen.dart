@@ -17,7 +17,6 @@ class CustomerHomeScreen extends StatefulWidget {
 
 class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   String _selectedCategory = 'Van';
-  String _searchQuery = '';
 
   final List<Map<String, dynamic>> _categories = [
     {'name': 'Van', 'icon': Icons.airport_shuttle},
@@ -76,20 +75,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final filteredVehicles = _featuredVehicles.where((v) {
-      final matchesCategory =
-          _selectedCategory == 'All' || v['category'] == _selectedCategory;
-      final matchesQuery =
-          _searchQuery.isEmpty ||
-          v['name'].toString().toLowerCase().contains(
-            _searchQuery.toLowerCase(),
-          ) ||
-          v['operatorName'].toString().toLowerCase().contains(
-            _searchQuery.toLowerCase(),
-          ) ||
-          v['routeName'].toString().toLowerCase().contains(
-            _searchQuery.toLowerCase(),
-          );
-      return matchesCategory && matchesQuery;
+      return _selectedCategory == 'All' || v['category'] == _selectedCategory;
     }).toList();
 
     return Scaffold(
@@ -113,7 +99,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             ],
             bottomChild: SearchField(
               hintText: 'Search for destination, city or veh...',
-              onChanged: (q) => setState(() => _searchQuery = q),
+              readOnly: true,
+              onTap: () => context.push('/search'),
               onFilterTap: () => _showFilterModal(context),
             ),
           ),
@@ -190,7 +177,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'No vehicles found for "$_searchQuery"',
+                          'No vehicles found for $_selectedCategory',
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ],

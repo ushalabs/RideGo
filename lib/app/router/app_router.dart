@@ -16,6 +16,7 @@ import '../../features/operator/presentation/approval_status_screen.dart';
 import '../../features/operator/presentation/operator_dashboard_screen.dart';
 import '../../features/operator/presentation/operator_register_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../../features/search/presentation/search_results_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> _shellNavigatorKey =
@@ -60,6 +61,14 @@ final GoRouter appRouter = GoRouter(
           builder: (context, state) => const ProfileScreen(),
         ),
       ],
+    ),
+    GoRoute(
+      path: '/search',
+      builder: (context, state) {
+        final q = state.uri.queryParameters['q'];
+        final cat = state.uri.queryParameters['category'];
+        return SearchResultsScreen(initialQuery: q, initialCategory: cat);
+      },
     ),
     GoRoute(
       path: '/category/:type',

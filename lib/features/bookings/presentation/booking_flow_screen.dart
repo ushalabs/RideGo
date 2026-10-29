@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/custom_button.dart';
+import '../../pricing/data/pricing_service.dart';
+import '../../pricing/models/fare_quote_model.dart';
 
 class BookingFlowScreen extends StatefulWidget {
   final String? vehicleId;
@@ -59,9 +61,34 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     '05:30 PM',
   ];
 
-  double get _baseFare => widget.initialFare ?? 150.0;
-  double get _terminalFee => 10.0;
-  double get _totalFare => (_baseFare * _passengers) + _terminalFee;
+  final _pricingService = PricingService();
+  FareQuoteModel? _authoritativeQuote;
+
+  @override
+  void initState() {
+    super.initState();
+    _recalculateFare();
+  }
+
+  void _recalculateFare() {
+    _pricingService
+        .calculateAuthoritativeFare(
+          originLocation: _pickupLocation,
+          destinationLocation: _dropoffLocation,
+          category: 'Van',
+          passengers: _passengers,
+        )
+        .then((q) {
+          if (mounted) setState(() => _authoritativeQuote = q);
+        });
+  }
+
+  double get _baseFare =>
+      _authoritativeQuote?.baseFare ?? (widget.initialFare ?? 150.0);
+  double get _terminalFee => _authoritativeQuote?.terminalFee ?? 10.0;
+  double get _totalFare =>
+      _authoritativeQuote?.totalFare ??
+      ((_baseFare * _passengers) + _terminalFee);
 
   void _confirmBooking() {
     if (_pickupLocation == _dropoffLocation) {
@@ -282,7 +309,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                     items: _stops
                         .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                         .toList(),
-                    onChanged: (v) => setState(() => _pickupLocation = v!),
+                    onChanged: (v) {
+                      setState(() => _pickupLocation = v!);
+                      _recalculateFare();
+                    },
                   ),
                   const SizedBox(height: 14),
                   // Dropoff Dropdown
@@ -299,7 +329,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                     items: _stops
                         .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                         .toList(),
-                    onChanged: (v) => setState(() => _dropoffLocation = v!),
+                    onChanged: (v) {
+                      setState(() => _dropoffLocation = v!);
+                      _recalculateFare();
+                    },
                   ),
                 ],
               ),
@@ -435,7 +468,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                               color: AppColors.buttonTeal,
                             ),
                             onPressed: _passengers > 1
-                                ? () => setState(() => _passengers--)
+                                ? () {
+                                    setState(() => _passengers--);
+                                    _recalculateFare();
+                                  }
                                 : null,
                           ),
                           Text(
@@ -451,7 +487,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                               color: AppColors.buttonTeal,
                             ),
                             onPressed: _passengers < 6
-                                ? () => setState(() => _passengers++)
+                                ? () {
+                                    setState(() => _passengers++);
+                                    _recalculateFare();
+                                  }
                                 : null,
                           ),
                         ],
