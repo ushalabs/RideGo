@@ -10,6 +10,8 @@ class AuthRepository {
   final SupabaseClient? _supabase;
 
   // In-memory session fallback for tests and offline preview
+  static final Map<String, UserProfile> _registeredUsers = {};
+  static final Map<String, OperatorProfile> _registeredOperators = {};
   UserProfile? _currentMockProfile;
   OperatorProfile? _currentMockOperator;
 
@@ -35,14 +37,18 @@ class AuthRepository {
 
   Future<UserProfile> getUserProfile(String userId, [String email = '']) async {
     if (!isConnected) {
-      return _currentMockProfile ??
-          UserProfile(
-            id: userId,
-            email: email.isNotEmpty ? email : 'customer@ridego.ph',
-            fullName: 'Kiya Vance',
-            role: UserRole.customer,
-            createdAt: DateTime.now(),
-          );
+      if (_currentMockProfile != null) return _currentMockProfile!;
+      final normalizedEmail = email.toLowerCase().trim();
+      if (_registeredUsers.containsKey(normalizedEmail)) {
+        return _registeredUsers[normalizedEmail]!;
+      }
+      return UserProfile(
+        id: userId,
+        email: email.isNotEmpty ? email : 'customer@ridego.ph',
+        fullName: email.isNotEmpty ? email.split('@').first : 'Traveler',
+        role: UserRole.customer,
+        createdAt: DateTime.now(),
+      );
     }
 
     try {
@@ -99,37 +105,83 @@ class AuthRepository {
   Future<UserProfile> signIn({
     required String email,
     required String password,
+    UserRole? preferredRole,
   }) async {
     if (!isConnected) {
-      // Offline / Demo authentication
-      final role = email.contains('admin')
-          ? UserRole.admin
-          : (email.contains('operator')
-                ? UserRole.operator
-                : UserRole.customer);
+      final normalizedEmail = email.toLowerCase().trim();
+      UserProfile profile;
 
-      final profile = UserProfile(
-        id: 'mock-user-${email.hashCode}',
-        email: email,
-        fullName: email.contains('admin')
-            ? 'Administrator'
-            : (email.contains('operator') ? 'Eduardo Tan' : 'Kiya Vance'),
-        role: role,
-        createdAt: DateTime.now(),
-      );
+      if (_registeredUsers.containsKey(normalizedEmail)) {
+        profile = _registeredUsers[normalizedEmail]!;
+        if (preferredRole == UserRole.operator &&
+            profile.role == UserRole.customer) {
+          profile = UserProfile(
+            id: profile.id,
+            email: profile.email,
+            fullName: profile.fullName,
+            role: UserRole.operator,
+            createdAt: profile.createdAt,
+          );
+          _registeredUsers[normalizedEmail] = profile;
+        }
+      } else {
+        // Offline / Demo authentication
+        final role =
+            preferredRole ??
+            (email.contains('admin')
+                ? UserRole.admin
+                : (email.contains('operator')
+                      ? UserRole.operator
+                      : UserRole.customer));
 
-      _currentMockProfile = profile;
-      if (role == UserRole.operator) {
-        _currentMockOperator = OperatorProfile(
-          id: 'mock-op-1',
-          userId: profile.id,
-          ownerName: 'Eduardo Tan',
-          businessName: 'GrandTours Samar',
-          contactNumber: '+63 917 555 4321',
-          businessLocation: 'Catbalogan, Samar',
-          approvalStatus: OperatorApprovalStatus.approved,
+        String derivedName = 'Traveler';
+        if (email.contains('admin')) {
+          derivedName = 'Administrator';
+        } else if (email.contains('operator')) {
+          derivedName = 'Eduardo Tan';
+        } else if (email.contains('@')) {
+          final prefix = email
+              .split('@')
+              .first
+              .replaceAll(RegExp(r'[._0-9]'), ' ')
+              .trim();
+          derivedName = prefix.isNotEmpty
+              ? prefix
+                    .split(' ')
+                    .map(
+                      (w) => w.isNotEmpty
+                          ? '${w[0].toUpperCase()}${w.substring(1)}'
+                          : '',
+                    )
+                    .join(' ')
+                    .trim()
+              : 'Traveler';
+        }
+
+        profile = UserProfile(
+          id: 'mock-user-${email.hashCode}',
+          email: email,
+          fullName: derivedName.isNotEmpty ? derivedName : 'Traveler',
+          role: role,
           createdAt: DateTime.now(),
         );
+        _registeredUsers[normalizedEmail] = profile;
+      }
+
+      _currentMockProfile = profile;
+      if (profile.role == UserRole.operator) {
+        _currentMockOperator =
+            _registeredOperators[normalizedEmail] ??
+            OperatorProfile(
+              id: 'mock-op-1',
+              userId: profile.id,
+              ownerName: profile.fullName,
+              businessName: 'Samar-Leyte Express Tours',
+              contactNumber: '+63 917 555 4321',
+              businessLocation: 'Catbalogan Central Terminal',
+              approvalStatus: OperatorApprovalStatus.approved,
+              createdAt: DateTime.now(),
+            );
       }
 
       return profile;
@@ -152,14 +204,16 @@ class AuthRepository {
     required String password,
     required String fullName,
   }) async {
+    final profile = UserProfile(
+      id: 'mock-user-${DateTime.now().millisecondsSinceEpoch}',
+      email: email,
+      fullName: fullName.isNotEmpty ? fullName : 'Traveler',
+      role: UserRole.customer,
+      createdAt: DateTime.now(),
+    );
+    _registeredUsers[email.toLowerCase().trim()] = profile;
+
     if (!isConnected) {
-      final profile = UserProfile(
-        id: 'mock-user-${DateTime.now().millisecondsSinceEpoch}',
-        email: email,
-        fullName: fullName,
-        role: UserRole.customer,
-        createdAt: DateTime.now(),
-      );
       _currentMockProfile = profile;
       return profile;
     }
@@ -203,14 +257,17 @@ class AuthRepository {
         approvalStatus: OperatorApprovalStatus.pending,
         createdAt: DateTime.now(),
       );
-      _currentMockOperator = op;
-      _currentMockProfile = UserProfile(
+      final profile = UserProfile(
         id: op.userId,
         email: email,
         fullName: ownerName,
         role: UserRole.operator,
         createdAt: DateTime.now(),
       );
+      _registeredOperators[email.toLowerCase().trim()] = op;
+      _registeredUsers[email.toLowerCase().trim()] = profile;
+      _currentMockOperator = op;
+      _currentMockProfile = profile;
       return op;
     }
 

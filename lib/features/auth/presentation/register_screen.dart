@@ -46,23 +46,31 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
       setState(() => _isLoading = true);
       try {
+        final registeredEmail = _emailController.text.trim();
         await ref
             .read(authNotifierProvider.notifier)
             .signUpCustomer(
-              email: _emailController.text.trim(),
+              email: registeredEmail,
               password: _passwordController.text,
               fullName: _nameController.text.trim(),
             );
 
+        // Sign out to force the user to sign in explicitly with their newly created account
+        await ref.read(authNotifierProvider.notifier).signOut();
+
         if (mounted) {
           setState(() => _isLoading = false);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Account created! Welcome to RideGo.'),
+            SnackBar(
+              content: Text(
+                'Account created successfully! Please sign in with $registeredEmail',
+              ),
               backgroundColor: AppColors.statusConfirmed,
+              duration: const Duration(seconds: 4),
             ),
           );
-          context.go('/home');
+          // Redirect to login screen
+          context.go('/login');
         }
       } catch (e) {
         if (mounted) {

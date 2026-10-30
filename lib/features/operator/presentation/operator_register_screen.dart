@@ -51,9 +51,20 @@ class _OperatorRegisterScreenState
               contactNumber: _phoneController.text.trim(),
               businessLocation: _locationController.text.trim(),
             );
+        // Sign out so the user is forced to sign in with their newly created account
+        await ref.read(authNotifierProvider.notifier).signOut();
         if (mounted) {
           setState(() => _isLoading = false);
-          context.go('/operator/pending');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Operator account registered! Please sign in with your credentials.',
+              ),
+              backgroundColor: AppColors.statusConfirmed,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          context.go('/login');
         }
       } catch (e) {
         if (mounted) {

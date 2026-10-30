@@ -41,6 +41,8 @@ class VehicleModel {
   final String plateNumber;
   final int passengerCapacity;
   final String description;
+  final String baseLocation;
+  final double basePrice;
   final String? imageUrl;
   final String status;
   final DateTime createdAt;
@@ -53,10 +55,38 @@ class VehicleModel {
     required this.plateNumber,
     required this.passengerCapacity,
     this.description = '',
+    this.baseLocation = 'Catbalogan Central Terminal',
+    this.basePrice = 150.0,
     this.imageUrl,
     this.status = 'active',
     required this.createdAt,
   });
+
+  VehicleModel copyWith({
+    String? name,
+    VehicleType? category,
+    String? plateNumber,
+    int? passengerCapacity,
+    String? description,
+    String? baseLocation,
+    double? basePrice,
+    String? status,
+  }) {
+    return VehicleModel(
+      id: id,
+      operatorId: operatorId,
+      name: name ?? this.name,
+      category: category ?? this.category,
+      plateNumber: plateNumber ?? this.plateNumber,
+      passengerCapacity: passengerCapacity ?? this.passengerCapacity,
+      description: description ?? this.description,
+      baseLocation: baseLocation ?? this.baseLocation,
+      basePrice: basePrice ?? this.basePrice,
+      imageUrl: imageUrl,
+      status: status ?? this.status,
+      createdAt: createdAt,
+    );
+  }
 
   factory VehicleModel.fromJson(Map<String, dynamic> json) {
     return VehicleModel(
@@ -67,6 +97,9 @@ class VehicleModel {
       plateNumber: json['plate_number'] as String,
       passengerCapacity: json['passenger_capacity'] as int? ?? 14,
       description: json['description'] as String? ?? '',
+      baseLocation:
+          json['base_location'] as String? ?? 'Catbalogan Central Terminal',
+      basePrice: (json['base_price'] as num?)?.toDouble() ?? 150.0,
       imageUrl: json['image_url'] as String?,
       status: json['status'] as String? ?? 'active',
       createdAt: json['created_at'] != null
@@ -84,6 +117,8 @@ class VehicleModel {
       'plate_number': plateNumber,
       'passenger_capacity': passengerCapacity,
       'description': description,
+      'base_location': baseLocation,
+      'base_price': basePrice,
       'image_url': imageUrl,
       'status': status,
     };

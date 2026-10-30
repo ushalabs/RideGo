@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/auth_repository.dart';
 import '../models/operator_profile.dart';
 import '../models/user_profile.dart';
+import '../models/user_role.dart';
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository();
@@ -24,10 +25,18 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserProfile?>> {
     }
   }
 
-  Future<UserProfile> signIn(String email, String password) async {
+  Future<UserProfile> signIn(
+    String email,
+    String password, {
+    UserRole? preferredRole,
+  }) async {
     state = const AsyncValue.loading();
     try {
-      final user = await _repo.signIn(email: email, password: password);
+      final user = await _repo.signIn(
+        email: email,
+        password: password,
+        preferredRole: preferredRole,
+      );
       state = AsyncValue.data(user);
       return user;
     } catch (e, st) {
@@ -91,3 +100,7 @@ final authNotifierProvider =
       final repo = ref.watch(authRepositoryProvider);
       return AuthNotifier(repo);
     });
+
+final currentUserProfileProvider = Provider<UserProfile?>((ref) {
+  return ref.watch(authNotifierProvider).value;
+});

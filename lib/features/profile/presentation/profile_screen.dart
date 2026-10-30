@@ -1,14 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/app_header.dart';
+import '../../auth/presentation/auth_providers.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userProfile = ref.watch(currentUserProfileProvider);
+    final fullName =
+        (userProfile?.fullName != null &&
+            userProfile!.fullName.trim().isNotEmpty)
+        ? userProfile.fullName
+        : 'Traveler Profile';
+    final email = userProfile?.email ?? 'commuter@ridego.ph';
+    final roleName = userProfile?.role.displayName ?? 'Customer';
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Column(
@@ -66,18 +76,18 @@ class ProfileScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Kiya Vance',
-                              style: TextStyle(
+                            Text(
+                              fullName,
+                              style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w800,
                                 color: AppColors.textPrimary,
                               ),
                             ),
                             const SizedBox(height: 2),
-                            const Text(
-                              'kiya.vance@example.com',
-                              style: TextStyle(
+                            Text(
+                              email,
+                              style: const TextStyle(
                                 fontSize: 12,
                                 color: AppColors.textSecondary,
                               ),
@@ -93,9 +103,9 @@ class ProfileScreen extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(color: AppColors.buttonTeal),
                               ),
-                              child: const Text(
-                                'Role: Customer',
-                                style: TextStyle(
+                              child: Text(
+                                'Role: $roleName',
+                                style: const TextStyle(
                                   color: AppColors.buttonTeal,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -250,8 +260,11 @@ class ProfileScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(25),
                       ),
                     ),
-                    onPressed: () {
-                      context.go('/login');
+                    onPressed: () async {
+                      await ref.read(authNotifierProvider.notifier).signOut();
+                      if (context.mounted) {
+                        context.go('/login');
+                      }
                     },
                   ),
                 ),

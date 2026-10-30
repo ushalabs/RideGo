@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -7,15 +8,16 @@ import '../../../core/widgets/app_header.dart';
 import '../../../core/widgets/category_pill.dart';
 import '../../../core/widgets/search_field.dart';
 import '../../../core/widgets/vehicle_card.dart';
+import '../../auth/presentation/auth_providers.dart';
 
-class CustomerHomeScreen extends StatefulWidget {
+class CustomerHomeScreen extends ConsumerStatefulWidget {
   const CustomerHomeScreen({super.key});
 
   @override
-  State<CustomerHomeScreen> createState() => _CustomerHomeScreenState();
+  ConsumerState<CustomerHomeScreen> createState() => _CustomerHomeScreenState();
 }
 
-class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
+class _CustomerHomeScreenState extends ConsumerState<CustomerHomeScreen> {
   String _selectedCategory = 'Van';
 
   final List<Map<String, dynamic>> _categories = [
@@ -74,6 +76,13 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final userProfile = ref.watch(currentUserProfileProvider);
+    final displayName =
+        (userProfile?.fullName != null &&
+            userProfile!.fullName.trim().isNotEmpty)
+        ? userProfile.fullName.trim().split(' ').first
+        : 'Traveler';
+
     final filteredVehicles = _featuredVehicles.where((v) {
       return _selectedCategory == 'All' || v['category'] == _selectedCategory;
     }).toList();
@@ -82,9 +91,9 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       backgroundColor: AppColors.background,
       body: Column(
         children: [
-          // Navy Header matching Figma
+          // Navy Header with dynamic greeting
           AppHeader(
-            title: 'Hello, Kiya',
+            title: 'Hello, $displayName',
             subtitle: 'Where are you headed today',
             leading: CircleAvatar(
               radius: 22,

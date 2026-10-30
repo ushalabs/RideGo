@@ -148,4 +148,67 @@ class ScheduleRepository {
 
     return ScheduleModel.fromJson(res);
   }
+
+  Future<void> updateScheduleFare(String scheduleId, double newFare) async {
+    final idx = _localSchedules.indexWhere((s) => s.id == scheduleId);
+    if (idx != -1) {
+      final s = _localSchedules[idx];
+      _localSchedules[idx] = ScheduleModel(
+        id: s.id,
+        operatorId: s.operatorId,
+        operatorName: s.operatorName,
+        vehicleId: s.vehicleId,
+        vehicleName: s.vehicleName,
+        routeVariantId: s.routeVariantId,
+        routeName: s.routeName,
+        departureTime: s.departureTime,
+        expectedArrivalTime: s.expectedArrivalTime,
+        availableCapacity: s.availableCapacity,
+        totalCapacity: s.totalCapacity,
+        fare: newFare,
+        status: s.status,
+      );
+    }
+    if (isConnected) {
+      try {
+        await _supabase!
+            .from('schedules')
+            .update({'fare': newFare})
+            .eq('id', scheduleId);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> updateScheduleRoute(
+    String scheduleId,
+    String newRouteName,
+  ) async {
+    final idx = _localSchedules.indexWhere((s) => s.id == scheduleId);
+    if (idx != -1) {
+      final s = _localSchedules[idx];
+      _localSchedules[idx] = ScheduleModel(
+        id: s.id,
+        operatorId: s.operatorId,
+        operatorName: s.operatorName,
+        vehicleId: s.vehicleId,
+        vehicleName: s.vehicleName,
+        routeVariantId: s.routeVariantId,
+        routeName: newRouteName,
+        departureTime: s.departureTime,
+        expectedArrivalTime: s.expectedArrivalTime,
+        availableCapacity: s.availableCapacity,
+        totalCapacity: s.totalCapacity,
+        fare: s.fare,
+        status: s.status,
+      );
+    }
+    if (isConnected) {
+      try {
+        await _supabase!
+            .from('schedules')
+            .update({'route_name': newRouteName})
+            .eq('id', scheduleId);
+      } catch (_) {}
+    }
+  }
 }

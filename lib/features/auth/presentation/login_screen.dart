@@ -8,6 +8,8 @@ import '../../../core/widgets/ridego_logo.dart';
 import '../models/user_role.dart';
 import 'auth_providers.dart';
 
+enum LoginType { customer, operator }
+
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -21,6 +23,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  LoginType _selectedType = LoginType.customer;
 
   @override
   void dispose() {
@@ -35,31 +38,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       try {
         final profile = await ref
             .read(authNotifierProvider.notifier)
-            .signIn(_emailController.text.trim(), _passwordController.text);
+            .signIn(
+              _emailController.text.trim(),
+              _passwordController.text,
+              preferredRole: _selectedType == LoginType.operator
+                  ? UserRole.operator
+                  : UserRole.customer,
+            );
 
         if (mounted) {
           setState(() => _isLoading = false);
 
-          // Route based on role
-          switch (profile.role) {
-            case UserRole.admin:
-              context.go('/admin/dashboard');
-              break;
-            case UserRole.operator:
-              final op = await ref
-                  .read(authRepositoryProvider)
-                  .getOperatorProfile(profile.id);
-              if (mounted) {
-                if (op != null && !op.isApproved) {
-                  context.go('/operator/pending');
-                } else {
-                  context.go('/operator/dashboard');
-                }
+          // Route based on role and portal
+          if (profile.role == UserRole.admin) {
+            context.go('/admin/dashboard');
+          } else if (_selectedType == LoginType.operator ||
+              profile.role == UserRole.operator) {
+            final op = await ref
+                .read(authRepositoryProvider)
+                .getOperatorProfile(profile.id);
+            if (mounted) {
+              if (op != null && !op.isApproved) {
+                context.go('/operator/pending');
+              } else {
+                context.go('/operator/dashboard');
               }
-              break;
-            case UserRole.customer:
-              context.go('/home');
-              break;
+            }
+          } else {
+            context.go('/home');
           }
         }
       } catch (e) {
@@ -130,10 +136,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
+  void _fillDemoCredentials(LoginType type) {
+    if (type == LoginType.customer) {
+      _emailController.text = 'passenger@ridego.ph';
+      _passwordController.text = 'passenger123';
+      setState(() => _selectedType = LoginType.customer);
+    } else {
+      _emailController.text = 'operator@ridego.ph';
+      _passwordController.text = 'operator123';
+      setState(() => _selectedType = LoginType.operator);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final isDesktop = size.width > 700;
+    final isOperator = _selectedType == LoginType.operator;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -151,17 +170,152 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 10),
-                  const Center(child: RideGoLogo(size: 130)),
-                  const SizedBox(height: 32),
+                  const Center(child: RideGoLogo(size: 110)),
+                  const SizedBox(height: 20),
+
+                  // Two-Way Role Segmented Switcher
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardSubtle,
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(
+                        color: AppColors.buttonTeal.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedType = LoginType.customer;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 10,
+                                horizontal: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: !isOperator
+                                    ? AppColors.buttonTeal
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(25),
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.person,
+                                      size: 18,
+                                      color: !isOperator
+                                          ? Colors.white
+                                          : AppColors.headerNavy,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Passenger',
+                                      style: TextStyle(
+                                        color: !isOperator
+                                            ? Colors.white
+                                            : AppColors.headerNavy,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedType = LoginType.operator;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 10,
+                                horizontal: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isOperator
+                                    ? AppColors.headerNavy
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(25),
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.airport_shuttle,
+                                      size: 18,
+                                      color: isOperator
+                                          ? Colors.white
+                                          : AppColors.headerNavy,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Vehicle Provider',
+                                      style: TextStyle(
+                                        color: isOperator
+                                            ? Colors.white
+                                            : AppColors.headerNavy,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 14),
+                  Text(
+                    isOperator
+                        ? 'Vehicle Provider & Fleet Sign In'
+                        : 'Passenger & Commuter Sign In',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.headerNavy,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isOperator
+                        ? 'Manage your transport fleet, terminals, fares & bookings'
+                        : 'Book buses, vans and motorcycle rides across Samar & Leyte',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
 
                   // Email input
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     decoration: InputDecoration(
-                      hintText: 'Email',
-                      prefixIcon: const Icon(
-                        Icons.email_outlined,
+                      hintText: isOperator ? 'Operator Email' : 'Email Address',
+                      prefixIcon: Icon(
+                        isOperator ? Icons.business : Icons.email_outlined,
                         color: AppColors.headerNavy,
                       ),
                       fillColor: Colors.white.withOpacity(0.95),
@@ -228,7 +382,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
 
                   // Login Button
                   CustomButton(
@@ -236,27 +390,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     isLoading: _isLoading,
                     onPressed: _handleLogin,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 18),
 
                   // Sign up prompt
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text(
-                        "Don't have an account? ",
-                        style: TextStyle(
+                      Text(
+                        isOperator
+                            ? 'Need to register your fleet? '
+                            : "Don't have an account? ",
+                        style: const TextStyle(
                           color: AppColors.headerNavy,
-                          fontSize: 14,
+                          fontSize: 13,
                         ),
                       ),
                       GestureDetector(
-                        onTap: () => context.push('/register'),
-                        child: const Text(
-                          'Sign Up',
+                        onTap: () {
+                          if (isOperator) {
+                            context.push('/operator/register');
+                          } else {
+                            context.push('/register');
+                          }
+                        },
+                        child: Text(
+                          isOperator ? 'Register Operator' : 'Sign Up',
                           style: TextStyle(
-                            color: AppColors.buttonTeal,
+                            color: isOperator
+                                ? AppColors.headerNavy
+                                : AppColors.buttonTeal,
                             fontWeight: FontWeight.w800,
-                            fontSize: 14,
+                            fontSize: 13,
                             decoration: TextDecoration.underline,
                           ),
                         ),
@@ -264,47 +428,56 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ],
                   ),
 
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 20),
                   const Divider(color: Colors.white38),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
 
-                  // Portal and Operator registration shortcuts
+                  // Quick Demo Switchers
                   Wrap(
-                    alignment: WrapAlignment.spaceEvenly,
-                    spacing: 12,
-                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       TextButton.icon(
-                        icon: const Icon(
-                          Icons.business,
-                          size: 16,
-                          color: AppColors.headerNavy,
-                        ),
-                        label: const Text(
-                          'Register Operator',
-                          style: TextStyle(
-                            color: AppColors.headerNavy,
-                            fontWeight: FontWeight.w700,
+                        icon: const Icon(Icons.person, size: 14),
+                        label: const Text('Passenger Demo'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.buttonTeal,
+                          textStyle: const TextStyle(
                             fontSize: 12,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                        onPressed: () => context.push('/operator/register'),
+                        onPressed: () {
+                          _fillDemoCredentials(LoginType.customer);
+                          _handleLogin();
+                        },
                       ),
+                      const Text('•', style: TextStyle(color: Colors.grey)),
                       TextButton.icon(
-                        icon: const Icon(
-                          Icons.admin_panel_settings,
-                          size: 16,
-                          color: AppColors.headerNavy,
-                        ),
-                        label: const Text(
-                          'Admin Portal',
-                          style: TextStyle(
-                            color: AppColors.headerNavy,
-                            fontWeight: FontWeight.w700,
+                        icon: const Icon(Icons.airport_shuttle, size: 14),
+                        label: const Text('Operator Demo'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.headerNavy,
+                          textStyle: const TextStyle(
                             fontSize: 12,
+                            fontWeight: FontWeight.w700,
                           ),
+                        ),
+                        onPressed: () {
+                          _fillDemoCredentials(LoginType.operator);
+                          _handleLogin();
+                        },
+                      ),
+                      const Text('•', style: TextStyle(color: Colors.grey)),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.blueGrey,
+                          textStyle: const TextStyle(fontSize: 12),
                         ),
                         onPressed: () => context.push('/admin/dashboard'),
+                        child: const Text('Admin'),
                       ),
                     ],
                   ),

@@ -70,6 +70,8 @@ class VehicleRepository {
     required String plateNumber,
     required int capacity,
     String description = '',
+    String baseLocation = 'Catbalogan Central Terminal',
+    double basePrice = 150.0,
     String? imageUrl,
   }) async {
     final newVehicle = VehicleModel(
@@ -80,6 +82,8 @@ class VehicleRepository {
       plateNumber: plateNumber,
       passengerCapacity: capacity,
       description: description,
+      baseLocation: baseLocation,
+      basePrice: basePrice,
       imageUrl: imageUrl,
       status: 'active',
       createdAt: DateTime.now(),
@@ -99,6 +103,8 @@ class VehicleRepository {
           'plate_number': plateNumber,
           'passenger_capacity': capacity,
           'description': description,
+          'base_location': baseLocation,
+          'base_price': basePrice,
           'image_url': imageUrl,
           'status': 'active',
         })
@@ -106,6 +112,41 @@ class VehicleRepository {
         .single();
 
     return VehicleModel.fromJson(res);
+  }
+
+  Future<void> updateVehiclePrice(String vehicleId, double newPrice) async {
+    final idx = _localVehicles.indexWhere((v) => v.id == vehicleId);
+    if (idx != -1) {
+      _localVehicles[idx] = _localVehicles[idx].copyWith(basePrice: newPrice);
+    }
+    if (isConnected) {
+      try {
+        await _supabase!
+            .from('vehicles')
+            .update({'base_price': newPrice})
+            .eq('id', vehicleId);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> updateVehicleLocation(
+    String vehicleId,
+    String newLocation,
+  ) async {
+    final idx = _localVehicles.indexWhere((v) => v.id == vehicleId);
+    if (idx != -1) {
+      _localVehicles[idx] = _localVehicles[idx].copyWith(
+        baseLocation: newLocation,
+      );
+    }
+    if (isConnected) {
+      try {
+        await _supabase!
+            .from('vehicles')
+            .update({'base_location': newLocation})
+            .eq('id', vehicleId);
+      } catch (_) {}
+    }
   }
 
   Future<String?> uploadVehicleImage({
