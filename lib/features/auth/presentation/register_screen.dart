@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/password_security.dart';
 import '../../../core/widgets/custom_button.dart';
 import '../../../core/widgets/ridego_logo.dart';
 import 'auth_providers.dart';
@@ -180,15 +181,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       ),
                       fillColor: Colors.white.withOpacity(0.95),
                     ),
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return 'Please enter your email';
-                      }
-                      if (!val.contains('@')) {
-                        return 'Enter a valid email';
-                      }
-                      return null;
-                    },
+                    validator: PasswordSecurity.validateEmail,
                   ),
                   const SizedBox(height: 14),
 
@@ -215,15 +208,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       ),
                       fillColor: Colors.white.withOpacity(0.95),
                     ),
-                    validator: (val) {
-                      if (val == null || val.isEmpty) {
-                        return 'Please enter a password';
-                      }
-                      if (val.length < 6) {
-                        return 'Password must be at least 6 characters';
-                      }
-                      return null;
-                    },
+                    validator: PasswordSecurity.validatePassword,
                   ),
                   const SizedBox(height: 14),
 
@@ -240,6 +225,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       fillColor: Colors.white.withOpacity(0.95),
                     ),
                     validator: (val) {
+                      if (val == null || val.isEmpty) {
+                        return 'Please confirm your password';
+                      }
                       if (val != _passwordController.text) {
                         return 'Passwords do not match';
                       }

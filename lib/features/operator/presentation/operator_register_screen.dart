@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/password_security.dart';
 import '../../../core/widgets/custom_button.dart';
 import '../../../core/widgets/ridego_logo.dart';
 import '../../auth/presentation/auth_providers.dart';
@@ -162,9 +163,7 @@ class _OperatorRegisterScreenState
                       color: AppColors.headerNavy,
                     ),
                   ),
-                  validator: (v) => (v == null || !v.contains('@'))
-                      ? 'Enter a valid email'
-                      : null,
+                  validator: PasswordSecurity.validateEmail,
                 ),
                 const SizedBox(height: 14),
 
@@ -179,9 +178,7 @@ class _OperatorRegisterScreenState
                       color: AppColors.headerNavy,
                     ),
                   ),
-                  validator: (v) => (v == null || v.length < 6)
-                      ? 'Minimum 6 characters'
-                      : null,
+                  validator: PasswordSecurity.validatePassword,
                 ),
                 const SizedBox(height: 14),
 

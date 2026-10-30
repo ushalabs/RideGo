@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ridego/core/utils/password_security.dart';
 import 'package:ridego/features/auth/data/auth_repository.dart';
 import 'package:ridego/features/auth/models/operator_profile.dart';
 import 'package:ridego/features/auth/models/user_profile.dart';
@@ -70,6 +71,93 @@ void main() {
 
       expect(adminUser.role, UserRole.admin);
       expect(adminUser.role.displayName, 'Administrator');
+    });
+
+    test('Password Security: salted cryptographic hash verification', () {
+      final salt = PasswordSecurity.generateSalt();
+      final hash = PasswordSecurity.hashPassword('MySecretPass456!', salt);
+
+      // Plaintext should never equal the hash
+      expect(hash, isNot('MySecretPass456!'));
+
+      // Correct password verification
+      expect(
+        PasswordSecurity.verifyPassword(
+          password: 'MySecretPass456!',
+          salt: salt,
+          expectedHash: hash,
+        ),
+        isTrue,
+      );
+
+      // Wrong password verification strictly fails
+      expect(
+        PasswordSecurity.verifyPassword(
+          password: 'WrongPassword!',
+          salt: salt,
+          expectedHash: hash,
+        ),
+        isFalse,
+      );
+    });
+
+    test('Password Security: password validation requirements', () {
+      expect(PasswordSecurity.validatePassword(null), isNotNull);
+      expect(PasswordSecurity.validatePassword(''), isNotNull);
+      expect(PasswordSecurity.validatePassword('12345'), isNotNull);
+      expect(PasswordSecurity.validatePassword('123456'), isNull);
+      expect(PasswordSecurity.validatePassword('ComplexPass123!'), isNull);
+
+      expect(PasswordSecurity.validateEmail('invalid-email'), isNotNull);
+      expect(PasswordSecurity.validateEmail('valid@user.com'), isNull);
+    });
+
+    test('Strict Authentication: rejects wrong password on sign in', () async {
+      // 1. Register user
+      await authRepository.signUpCustomer(
+        email: 'secure.user@ridego.ph',
+        password: 'RealSecretPassword99',
+        fullName: 'Secure Commuter',
+      );
+
+      // 2. Try signing in with wrong password -> MUST throw exception
+      expect(
+        () async => await authRepository.signIn(
+          email: 'secure.user@ridego.ph',
+          password: 'WrongPasswordNonsense',
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (e) => e.toString(),
+            'message',
+            contains('Incorrect password'),
+          ),
+        ),
+      );
+
+      // 3. Try signing in with correct password -> MUST succeed
+      final user = await authRepository.signIn(
+        email: 'secure.user@ridego.ph',
+        password: 'RealSecretPassword99',
+      );
+      expect(user.fullName, 'Secure Commuter');
+      expect(user.email, 'secure.user@ridego.ph');
+    });
+
+    test('Strict Authentication: rejects unregistered email', () async {
+      expect(
+        () async => await authRepository.signIn(
+          email: 'ghost.user.random@ridego.ph',
+          password: 'SomePassword123',
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (e) => e.toString(),
+            'message',
+            contains('No account found'),
+          ),
+        ),
+      );
     });
   });
 }

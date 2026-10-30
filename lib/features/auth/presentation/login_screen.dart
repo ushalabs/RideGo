@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/password_security.dart';
 import '../../../core/widgets/custom_button.dart';
 import '../../../core/widgets/ridego_logo.dart';
 import '../models/user_role.dart';
@@ -320,15 +321,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                       fillColor: Colors.white.withOpacity(0.95),
                     ),
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return 'Please enter your email';
-                      }
-                      if (!val.contains('@')) {
-                        return 'Please enter a valid email';
-                      }
-                      return null;
-                    },
+                    validator: PasswordSecurity.validateEmail,
                   ),
                   const SizedBox(height: 16),
 
@@ -355,15 +348,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                       fillColor: Colors.white.withOpacity(0.95),
                     ),
-                    validator: (val) {
-                      if (val == null || val.isEmpty) {
-                        return 'Please enter your password';
-                      }
-                      if (val.length < 6) {
-                        return 'Password must be at least 6 characters';
-                      }
-                      return null;
-                    },
+                    validator: PasswordSecurity.validatePassword,
                   ),
                   const SizedBox(height: 10),
 

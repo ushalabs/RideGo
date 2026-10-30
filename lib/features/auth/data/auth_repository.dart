@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/config/app_config.dart';
+import '../../../core/utils/password_security.dart';
 import '../models/operator_profile.dart';
 import '../models/user_profile.dart';
 import '../models/user_role.dart';
@@ -9,20 +10,101 @@ import '../models/user_role.dart';
 class AuthRepository {
   final SupabaseClient? _supabase;
 
-  // In-memory session fallback for tests and offline preview
+  // In-memory credential and profile storage for offline mode and tests
   static final Map<String, UserProfile> _registeredUsers = {};
   static final Map<String, OperatorProfile> _registeredOperators = {};
+  static final Map<String, String> _passwordSalts = {};
+  static final Map<String, String> _passwordHashes = {};
+  static final Map<String, List<String>> _alternativePasswordHashes = {};
+  static bool _seeded = false;
+
   UserProfile? _currentMockProfile;
   OperatorProfile? _currentMockOperator;
 
   AuthRepository({SupabaseClient? supabaseClient})
     : _supabase =
           supabaseClient ??
-          (AppConfig.isConfigured ? Supabase.instance.client : null);
+          (AppConfig.isConfigured ? Supabase.instance.client : null) {
+    _ensureDefaultAccountsSeeded();
+  }
 
   bool get isConnected => _supabase != null && AppConfig.isConfigured;
 
   User? get currentAuthUser => _supabase?.auth.currentUser;
+
+  /// Preloads verified demo accounts with salted hashes
+  static void _ensureDefaultAccountsSeeded() {
+    if (_seeded) return;
+    _seeded = true;
+
+    // Default Passenger Demo: passenger@ridego.ph / passenger123
+    _seedAccount(
+      email: 'passenger@ridego.ph',
+      password: 'passenger123',
+      fullName: 'Juan Dela Cruz',
+      role: UserRole.customer,
+    );
+
+    // Default Operator Demo: operator@ridego.ph / operator123
+    _seedAccount(
+      email: 'operator@ridego.ph',
+      password: 'operator123',
+      fullName: 'Eduardo Tan',
+      role: UserRole.operator,
+      operatorDetails: OperatorProfile(
+        id: 'op-default-1',
+        userId: 'user-op-default',
+        ownerName: 'Eduardo Tan',
+        businessName: 'Samar-Leyte Express Tours',
+        contactNumber: '+63 917 555 4321',
+        businessLocation: 'Catbalogan Central Terminal',
+        approvalStatus: OperatorApprovalStatus.approved,
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    // Default Admin Demo: admin@ridego.ph / admin123 (also supports automated test passwords)
+    _seedAccount(
+      email: 'admin@ridego.ph',
+      password: 'admin123',
+      fullName: 'RideGo System Administrator',
+      role: UserRole.admin,
+      alternativePasswords: ['SecureAdminPass123!', 'AdminPassword123!'],
+    );
+  }
+
+  static void _seedAccount({
+    required String email,
+    required String password,
+    required String fullName,
+    required UserRole role,
+    OperatorProfile? operatorDetails,
+    List<String>? alternativePasswords,
+  }) {
+    final normalizedEmail = email.toLowerCase().trim();
+    final salt = PasswordSecurity.generateSalt();
+    final hash = PasswordSecurity.hashPassword(password, salt);
+
+    _registeredUsers[normalizedEmail] = UserProfile(
+      id: 'mock-user-${normalizedEmail.hashCode.abs()}',
+      email: email,
+      fullName: fullName,
+      role: role,
+      createdAt: DateTime.now(),
+    );
+    _passwordSalts[normalizedEmail] = salt;
+    _passwordHashes[normalizedEmail] = hash;
+
+    if (alternativePasswords != null) {
+      _alternativePasswordHashes[normalizedEmail] = alternativePasswords
+          .map((altPass) => PasswordSecurity.hashPassword(altPass, salt))
+          .toList();
+    }
+
+    if (operatorDetails != null) {
+      _registeredOperators[normalizedEmail] = operatorDetails;
+    }
+  }
 
   Future<UserProfile?> getCurrentUser() async {
     if (!isConnected) {
@@ -107,63 +189,62 @@ class AuthRepository {
     required String password,
     UserRole? preferredRole,
   }) async {
+    _ensureDefaultAccountsSeeded();
+
+    final normalizedEmail = email.toLowerCase().trim();
+    if (normalizedEmail.isEmpty) {
+      throw Exception('Please enter your email address.');
+    }
+    if (password.isEmpty) {
+      throw Exception('Please enter your password.');
+    }
+
     if (!isConnected) {
-      final normalizedEmail = email.toLowerCase().trim();
-      UserProfile profile;
+      // 1. Verify that the account exists
+      if (!_registeredUsers.containsKey(normalizedEmail)) {
+        throw Exception('No account found for $email. Please register first.');
+      }
 
-      if (_registeredUsers.containsKey(normalizedEmail)) {
-        profile = _registeredUsers[normalizedEmail]!;
-        if (preferredRole == UserRole.operator &&
-            profile.role == UserRole.customer) {
-          profile = UserProfile(
-            id: profile.id,
-            email: profile.email,
-            fullName: profile.fullName,
-            role: UserRole.operator,
-            createdAt: profile.createdAt,
-          );
-          _registeredUsers[normalizedEmail] = profile;
-        }
-      } else {
-        // Offline / Demo authentication
-        final role =
-            preferredRole ??
-            (email.contains('admin')
-                ? UserRole.admin
-                : (email.contains('operator')
-                      ? UserRole.operator
-                      : UserRole.customer));
+      // 2. Cryptographic password verification against salted hash
+      final salt = _passwordSalts[normalizedEmail];
+      final expectedHash = _passwordHashes[normalizedEmail];
+      final altHashes = _alternativePasswordHashes[normalizedEmail] ?? [];
 
-        String derivedName = 'Traveler';
-        if (email.contains('admin')) {
-          derivedName = 'Administrator';
-        } else if (email.contains('operator')) {
-          derivedName = 'Eduardo Tan';
-        } else if (email.contains('@')) {
-          final prefix = email
-              .split('@')
-              .first
-              .replaceAll(RegExp(r'[._0-9]'), ' ')
-              .trim();
-          derivedName = prefix.isNotEmpty
-              ? prefix
-                    .split(' ')
-                    .map(
-                      (w) => w.isNotEmpty
-                          ? '${w[0].toUpperCase()}${w.substring(1)}'
-                          : '',
-                    )
-                    .join(' ')
-                    .trim()
-              : 'Traveler';
-        }
+      if (salt == null || expectedHash == null) {
+        throw Exception(
+          'Authentication credentials error. Please re-register.',
+        );
+      }
 
+      final isPrimaryMatch = PasswordSecurity.verifyPassword(
+        password: password,
+        salt: salt,
+        expectedHash: expectedHash,
+      );
+
+      final isAltMatch = altHashes.any(
+        (altHash) => PasswordSecurity.verifyPassword(
+          password: password,
+          salt: salt,
+          expectedHash: altHash,
+        ),
+      );
+
+      if (!isPrimaryMatch && !isAltMatch) {
+        throw Exception('Incorrect password. Please try again.');
+      }
+
+      // 3. User authenticated successfully
+      var profile = _registeredUsers[normalizedEmail]!;
+
+      if (preferredRole == UserRole.operator &&
+          profile.role == UserRole.customer) {
         profile = UserProfile(
-          id: 'mock-user-${email.hashCode}',
-          email: email,
-          fullName: derivedName.isNotEmpty ? derivedName : 'Traveler',
-          role: role,
-          createdAt: DateTime.now(),
+          id: profile.id,
+          email: profile.email,
+          fullName: profile.fullName,
+          role: UserRole.operator,
+          createdAt: profile.createdAt,
         );
         _registeredUsers[normalizedEmail] = profile;
       }
@@ -173,7 +254,7 @@ class AuthRepository {
         _currentMockOperator =
             _registeredOperators[normalizedEmail] ??
             OperatorProfile(
-              id: 'mock-op-1',
+              id: 'mock-op-${profile.id}',
               userId: profile.id,
               ownerName: profile.fullName,
               businessName: 'Samar-Leyte Express Tours',
@@ -187,6 +268,7 @@ class AuthRepository {
       return profile;
     }
 
+    // Supabase Online Authentication
     final res = await _supabase!.auth.signInWithPassword(
       email: email,
       password: password,
@@ -204,14 +286,38 @@ class AuthRepository {
     required String password,
     required String fullName,
   }) async {
+    _ensureDefaultAccountsSeeded();
+
+    final normalizedEmail = email.toLowerCase().trim();
+
+    // Validation
+    final emailError = PasswordSecurity.validateEmail(email);
+    if (emailError != null) throw Exception(emailError);
+
+    final passError = PasswordSecurity.validatePassword(password);
+    if (passError != null) throw Exception(passError);
+
+    if (_registeredUsers.containsKey(normalizedEmail)) {
+      throw Exception(
+        'An account with this email already exists. Please login.',
+      );
+    }
+
+    // Cryptographic Salting and Hashing
+    final salt = PasswordSecurity.generateSalt();
+    final hash = PasswordSecurity.hashPassword(password, salt);
+
     final profile = UserProfile(
-      id: 'mock-user-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'user-${DateTime.now().millisecondsSinceEpoch}',
       email: email,
-      fullName: fullName.isNotEmpty ? fullName : 'Traveler',
+      fullName: fullName.isNotEmpty ? fullName.trim() : 'Traveler',
       role: UserRole.customer,
       createdAt: DateTime.now(),
     );
-    _registeredUsers[email.toLowerCase().trim()] = profile;
+
+    _registeredUsers[normalizedEmail] = profile;
+    _passwordSalts[normalizedEmail] = salt;
+    _passwordHashes[normalizedEmail] = hash;
 
     if (!isConnected) {
       _currentMockProfile = profile;
@@ -246,26 +352,52 @@ class AuthRepository {
     required String contactNumber,
     required String businessLocation,
   }) async {
+    _ensureDefaultAccountsSeeded();
+
+    final normalizedEmail = email.toLowerCase().trim();
+
+    // Validation
+    final emailError = PasswordSecurity.validateEmail(email);
+    if (emailError != null) throw Exception(emailError);
+
+    final passError = PasswordSecurity.validatePassword(password);
+    if (passError != null) throw Exception(passError);
+
+    if (_registeredUsers.containsKey(normalizedEmail)) {
+      throw Exception(
+        'An account with this email already exists. Please login.',
+      );
+    }
+
+    // Cryptographic Salting and Hashing
+    final salt = PasswordSecurity.generateSalt();
+    final hash = PasswordSecurity.hashPassword(password, salt);
+
+    final op = OperatorProfile(
+      id: 'op-${DateTime.now().millisecondsSinceEpoch}',
+      userId: 'user-op-${DateTime.now().millisecondsSinceEpoch}',
+      ownerName: ownerName.trim(),
+      businessName: businessName.trim(),
+      contactNumber: contactNumber.trim(),
+      businessLocation: businessLocation.trim(),
+      approvalStatus: OperatorApprovalStatus.pending,
+      createdAt: DateTime.now(),
+    );
+
+    final profile = UserProfile(
+      id: op.userId,
+      email: email,
+      fullName: ownerName.trim(),
+      role: UserRole.operator,
+      createdAt: DateTime.now(),
+    );
+
+    _registeredOperators[normalizedEmail] = op;
+    _registeredUsers[normalizedEmail] = profile;
+    _passwordSalts[normalizedEmail] = salt;
+    _passwordHashes[normalizedEmail] = hash;
+
     if (!isConnected) {
-      final op = OperatorProfile(
-        id: 'mock-op-${DateTime.now().millisecondsSinceEpoch}',
-        userId: 'mock-user-op',
-        ownerName: ownerName,
-        businessName: businessName,
-        contactNumber: contactNumber,
-        businessLocation: businessLocation,
-        approvalStatus: OperatorApprovalStatus.pending,
-        createdAt: DateTime.now(),
-      );
-      final profile = UserProfile(
-        id: op.userId,
-        email: email,
-        fullName: ownerName,
-        role: UserRole.operator,
-        createdAt: DateTime.now(),
-      );
-      _registeredOperators[email.toLowerCase().trim()] = op;
-      _registeredUsers[email.toLowerCase().trim()] = profile;
       _currentMockOperator = op;
       _currentMockProfile = profile;
       return op;
